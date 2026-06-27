@@ -198,74 +198,80 @@ class PN532_I2C:
         self._log(f"bad ACK: {' '.join(f'{b:02X}' for b in raw)}")
         return False
 
-    def _read_response_frame(self, max_len: int = 64) -> list | None:
+    def _read_response_frame(self, max_len: int = 64, timeout: float = 1.0) -> list | None:
         """Read and validate a PN532 response frame.
 
+        Polls until a valid frame (``00 00 FF …``) is found anywhere
+        in the I2C read-back.  The first byte of each read is normally
+        a status byte (0x01 = ready), but some PN532 operations (e.g.
+        card polling) may return data with a leading 0x00 — we search
+        the whole raw buffer regardless.
+
         Returns the **payload** (TFI + CMD + DATA…) on success,
-        or ``None`` on any checksum / framing error.
-
-        The I2C read returns ``[status_byte] + [frame_bytes…]``.
-        We strip the status byte before parsing the frame.
+        or ``None`` on timeout / checksum error.
         """
-        try:
-            raw = self._i2c_read(max_len + 2)
-        except OSError:
-            self._log("I2C read error")
-            return None
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                raw = self._i2c_read(max_len + 2)
+            except OSError:
+                time.sleep(0.005)
+                continue
 
-        if not raw or len(raw) < 2:
-            self._log("empty response")
-            return None
+            if not raw or len(raw) < 7:
+                time.sleep(0.005)
+                continue
 
-        # Strip the leading status byte (and any extra 0x00 preamble bytes
-        # that may appear before the 00 00 FF sync pattern)
-        data = raw[1:]
+            # Search the ENTIRE raw buffer for the ``00 00 FF`` sync
+            start = self._find_frame_start(raw)
+            if start < 0:
+                self._log(f"no frame sync yet: "
+                          f"{' '.join(f'{b:02X}' for b in raw[:12])}..., retrying")
+                time.sleep(0.01)
+                continue
 
-        # Locate the ``00 00 FF`` sync sequence
-        start = self._find_frame_start(data)
-        if start < 0:
-            self._log(f"frame sync 00 00 FF not found in: {' '.join(f'{b:02X}' for b in data)}")
-            return None
+            data = raw[start:]
+            if len(data) < 7:
+                time.sleep(0.005)
+                continue
 
-        data = data[start:]
-        if len(data) < 7:
-            self._log("response too short for a valid frame")
-            return None
+            length = data[3]
+            lcs    = data[4]
 
-        length = data[3]
-        lcs    = data[4]
+            # Length == 0 → ACK packet in response slot
+            if length == 0x00:
+                candidate = bytes(data[:6])
+                if candidate == self.ACK_PACKET:
+                    self._log("received ACK where response frame expected")
+                return None
 
-        # Length == 0 + specific pattern → ACK packet snuck in
-        if length == 0x00:
-            candidate = bytes(data[:6])
-            if candidate == self.ACK_PACKET:
-                self._log("received ACK where response frame expected")
-            return None
+            # Validate length checksum
+            if ((length + lcs) & 0xFF) != 0x00:
+                self._log(f"LCS mismatch: LEN=0x{length:02X} LCS=0x{lcs:02X}")
+                return None
 
-        # Validate length checksum
-        if ((length + lcs) & 0xFF) != 0x00:
-            self._log(f"LCS mismatch: LEN=0x{length:02X} LCS=0x{lcs:02X}")
-            return None
+            frame_total = length + 7
+            if len(data) < frame_total:
+                self._log(f"incomplete frame: need {frame_total}, have {len(data)}")
+                time.sleep(0.01)
+                continue
 
-        frame_total = length + 7                 # header(5) + payload + DCS + POST
-        if len(data) < frame_total:
-            self._log(f"incomplete frame: need {frame_total} bytes, have {len(data)}")
-            return None
+            frame_data = data[5 : 5 + length]
+            dcs        = data[5 + length]
+            postamble  = data[6 + length]
 
-        frame_data = data[5 : 5 + length]        # TFI + CMD + DATA…
-        dcs        = data[5 + length]
-        postamble  = data[6 + length]
+            if ((sum(frame_data) + dcs) & 0xFF) != 0x00:
+                self._log(f"DCS mismatch")
+                return None
 
-        # Validate data checksum
-        if ((sum(frame_data) + dcs) & 0xFF) != 0x00:
-            self._log(f"DCS mismatch for data: {' '.join(f'{b:02X}' for b in frame_data)}")
-            return None
+            if postamble != 0x00:
+                self._log(f"unexpected postamble 0x{postamble:02X}")
 
-        if postamble != 0x00:
-            self._log(f"unexpected postamble 0x{postamble:02X} (expected 0x00)")
+            self._log(f"response payload: {' '.join(f'{b:02X}' for b in frame_data)}")
+            return frame_data
 
-        self._log(f"response payload: {' '.join(f'{b:02X}' for b in frame_data)}")
-        return frame_data
+        self._log(f"timeout reading response frame (> {timeout:.1f}s)")
+        return None
 
     # -------------------------------------------------------------------
     # Command dispatch
@@ -310,12 +316,8 @@ class PN532_I2C:
         if not self._read_ack():
             return None
 
-        # ── Wait for Response ──
-        if not self._wait_ready(timeout):
-            self._log(f"no response ready for command 0x{command:02X}")
-            return None
-
-        frame_data = self._read_response_frame()
+        # ── Wait for Response (polling inside _read_response_frame) ──
+        frame_data = self._read_response_frame(max_len=64, timeout=timeout)
         if frame_data is None:
             return None
 
