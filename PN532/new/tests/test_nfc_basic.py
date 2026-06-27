@@ -99,19 +99,19 @@ def main() -> int:
     print("=" * 50)
     print("PN532 I2C Basic Test")
     print("=" * 50)
-    print("I2C Bus: 4  |  Device: /dev/i2c-4")
+    print("I2C Bus: 7  |  Device: /dev/i2c-7")
     print("Expected I2C address: 0x24 (PN532)")
     print("=" * 50)
 
     # ── Initialise ──
     print("\n[INIT] Initializing PN532...")
-    nfc = PN532_I2C(bus=4, debug=False)
+    nfc = PN532_I2C(bus=7, debug=False)
 
     if not nfc.begin():
         print("\n[FAIL] PN532 initialization failed!")
         print("Common causes:")
         print("  1. Wrong wiring (SDA/SCL swapped?)")
-        print("  2. Wrong I2C bus (not /dev/i2c-4?)")
+        print("  2. Wrong I2C bus (not /dev/i2c-7?)")
         print("  3. No 3.3V power to PN532")
         print("  4. I2C address conflict (try: sudo i2cdetect -y 4)")
         return 1

@@ -7,7 +7,7 @@ PN532 NFC Module — I2C Driver for RK3588 / Linux
 Target hardware:
     - SoC:       Rockchip RK3588 (ELF 2)
     - NFC chip:  NXP PN532 (I2C mode)
-    - I2C bus:   /dev/i2c-4
+    - I2C bus:   /dev/i2c-7
     - Address:   0x24
 
 Dependencies:
@@ -59,12 +59,12 @@ class PN532_I2C:
     # ── Baud-rate constants for InListPassiveTarget ────────────────────
     BR_ISO14443A_MIFARE = 0x00        # 106 kbps, Type A
 
-    def __init__(self, bus=4, address=PN532_I2C_ADDRESS, debug=False):
+    def __init__(self, bus=7, address=PN532_I2C_ADDRESS, debug=False):
         """
         Parameters
         ----------
         bus : int
-            I2C bus number (default 4 → /dev/i2c-4 on RK3588 ELF 2).
+            I2C bus number (default 7 → /dev/i2c-7 for PN532 on ELF 2).
         address : int
             7-bit I2C address (default 0x24, factory-set on PN532).
         debug : bool
@@ -85,13 +85,21 @@ class PN532_I2C:
     # -------------------------------------------------------------------
 
     def _i2c_write(self, data: bytes) -> None:
-        """Write raw bytes to the PN532 I2C address."""
-        self._log(f"I2C TX → {' '.join(f'{b:02X}' for b in data)}")
-        msg = smbus2.i2c_msg.write(self.address, list(data))
+        """Write the PN532 frame over I2C.
+
+        An extra ``0x00`` prefix byte is prepended per the PN532 I2C
+        protocol: on many modules this byte is consumed as an I2C
+        "register select", leaving the actual PN532 frame starting at
+        the second byte.  Modules that don't consume it simply treat it
+        as an extra preamble (which the PN532 parser ignores).
+        """
+        payload = [0x00] + list(data)
+        self._log(f"I2C TX → {' '.join(f'{b:02X}' for b in payload)}")
+        msg = smbus2.i2c_msg.write(self.address, payload)
         self._bus.i2c_rdwr(msg)
 
     def _i2c_read(self, count: int) -> list:
-        """Read *count* raw bytes from the PN532 I2C address."""
+        """Pure I2C read — the PN532 always returns the status byte first."""
         msg = smbus2.i2c_msg.read(self.address, count)
         self._bus.i2c_rdwr(msg)
         data = list(msg)
@@ -103,7 +111,11 @@ class PN532_I2C:
     # -------------------------------------------------------------------
 
     def _read_status(self) -> int:
-        """Return the 1-byte status from PN532 (0x01 = ready, else busy)."""
+        """Return the 1-byte status from PN532 (0x01 = ready, else busy).
+
+        The PN532 always returns its status byte as the first byte of
+        any I2C read transaction.
+        """
         try:
             data = self._i2c_read(1)
             return data[0] if data else 0xFF
@@ -159,12 +171,31 @@ class PN532_I2C:
         return -1
 
     def _read_ack(self) -> bool:
-        """Read 6 bytes and verify they match the PN532 ACK packet."""
-        ack = bytes(self._i2c_read(6))
-        if ack == self.ACK_PACKET:
+        """Read and verify the PN532 ACK packet.
+
+        I2C read returns ``[status=0x01] + ACK[6]`` = 7 bytes total.
+        We read 7 bytes strip the leading status, then verify ACK.
+        """
+        try:
+            raw = self._i2c_read(7)
+        except OSError:
+            return False
+
+        if not raw or len(raw) < 7:
+            return False
+
+        # raw[0] = status, raw[1:7] = ACK packet
+        ack_bytes = bytes(raw[1:7])
+        if ack_bytes == self.ACK_PACKET:
             self._log("ACK received")
             return True
-        self._log(f"bad ACK: {ack.hex(' ').upper()}")
+
+        # Fallback: maybe status byte is absent; try raw[0:6]
+        if bytes(raw[:6]) == self.ACK_PACKET:
+            self._log("ACK received (no status prefix)")
+            return True
+
+        self._log(f"bad ACK: {' '.join(f'{b:02X}' for b in raw)}")
         return False
 
     def _read_response_frame(self, max_len: int = 64) -> list | None:
@@ -172,18 +203,31 @@ class PN532_I2C:
 
         Returns the **payload** (TFI + CMD + DATA…) on success,
         or ``None`` on any checksum / framing error.
+
+        The I2C read returns ``[status_byte] + [frame_bytes…]``.
+        We strip the status byte before parsing the frame.
         """
-        raw = self._i2c_read(max_len)
-        if not raw:
+        try:
+            raw = self._i2c_read(max_len + 2)
+        except OSError:
+            self._log("I2C read error")
             return None
+
+        if not raw or len(raw) < 2:
+            self._log("empty response")
+            return None
+
+        # Strip the leading status byte (and any extra 0x00 preamble bytes
+        # that may appear before the 00 00 FF sync pattern)
+        data = raw[1:]
 
         # Locate the ``00 00 FF`` sync sequence
-        start = self._find_frame_start(raw)
+        start = self._find_frame_start(data)
         if start < 0:
-            self._log("frame sync 00 00 FF not found in response")
+            self._log(f"frame sync 00 00 FF not found in: {' '.join(f'{b:02X}' for b in data)}")
             return None
 
-        data = raw[start:]
+        data = data[start:]
         if len(data) < 7:
             self._log("response too short for a valid frame")
             return None
@@ -612,7 +656,7 @@ class NFCAuth:
             # → GPIO unlock …
     """
 
-    def __init__(self, authorized_uids: set | None = None, bus: int = 4):
+    def __init__(self, authorized_uids: set | None = None, bus: int = 7):
         """
         Parameters
         ----------
@@ -664,7 +708,7 @@ if __name__ == "__main__":
     print("PN532 I2C Driver — Self-Test")
     print("=" * 50)
 
-    nfc = PN532_I2C(bus=4, debug=False)
+    nfc = PN532_I2C(bus=7, debug=False)
     try:
         if not nfc.begin():
             print("[FAIL] PN532 initialization failed.")

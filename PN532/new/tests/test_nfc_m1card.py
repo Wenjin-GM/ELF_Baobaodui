@@ -241,7 +241,7 @@ def main() -> int:
     print("=" * 50)
 
     # ── Initialise ──
-    nfc = PN532_I2C(bus=4, debug=False)
+    nfc = PN532_I2C(bus=7, debug=False)
     if not nfc.begin():
         print("\n[FAIL] PN532 not found!  Check wiring.")
         return 1
