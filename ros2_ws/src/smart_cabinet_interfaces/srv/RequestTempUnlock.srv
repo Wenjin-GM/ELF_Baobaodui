@@ -1,0 +1,4 @@
+float32 pulse_sec
+---
+bool accepted
+string message

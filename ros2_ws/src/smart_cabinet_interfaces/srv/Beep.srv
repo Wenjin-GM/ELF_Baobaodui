@@ -1,0 +1,6 @@
+int32 times
+float32 on_sec
+float32 off_sec
+---
+bool success
+string message

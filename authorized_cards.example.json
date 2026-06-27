@@ -1,0 +1,9 @@
+{
+  "cards": {
+    "DEMOUID": {
+      "name": "demo_user",
+      "role": "user",
+      "enrolled_at": "YYYY-MM-DD HH:MM:SS"
+    }
+  }
+}

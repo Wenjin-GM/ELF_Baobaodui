@@ -1,0 +1,5 @@
+float32 pulse_sec
+---
+bool success
+float32 actual_pulse_sec
+string message

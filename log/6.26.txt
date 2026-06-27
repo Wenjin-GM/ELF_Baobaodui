@@ -1,0 +1,10 @@
+main.py：主程序入口，保留在根目录，板端仍用 sudo python3 main.py 启动。
+authorized_cards.json：授权卡配置，保留在根目录。
+PN532/：PN532 I2C 驱动和 NFC 测试脚本。
+sht30_test/：SHT30/SHT31 C 测试代码和板端可执行文件。
+charging/：GPIO 硬件测试脚本，现在有 test_lock.py 和 test_buzzer.py，已按最新接线更新。
+USB/：USB 摄像头、人脸识别代码和人脸特征库。
+vision/camera/：板载/双摄像头预览和拍照脚本。
+scripts/：板端检查脚本，包含 check_system.sh、test_main.sh、diagnose_nfc.sh。
+tools/：调试工具，env_nfc_relay_control.py 已移入这里，并修正导入路径和默认引脚。
+docs/：所有 Markdown 说明文档。

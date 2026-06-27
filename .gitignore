@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# ROS2 build outputs
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Runtime data
+data/run/
+data/ros_logs/*
+!data/ros_logs/.gitkeep
+data/inventory_images/*
+!data/inventory_images/.gitkeep
+data/inventory_result/*
+!data/inventory_result/.gitkeep
+data/events/*
+!data/events/.gitkeep
+data/auth/*
+!data/auth/.gitkeep
+data/environment/*
+!data/environment/.gitkeep
+data/battery/*
+!data/battery/.gitkeep
+data/actuator/*
+!data/actuator/.gitkeep
+data/ui/*
+!data/ui/.gitkeep
+
+# Local hardware/private data
+authorized_cards.json
+USB/face_auth/face_db/
+
+# Native build artifacts
+*.o
+*.so
+*.a
+*.exe
+sht30_test/sht31-d
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*~
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,5 @@
+bool on
+string reason
+---
+bool accepted
+string message

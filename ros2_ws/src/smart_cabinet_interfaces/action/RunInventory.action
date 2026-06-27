@@ -1,0 +1,11 @@
+string reason
+bool save_image
+---
+bool success
+string image_path
+bool is_normal
+string zones_json
+string detections_json
+string message
+---
+string status

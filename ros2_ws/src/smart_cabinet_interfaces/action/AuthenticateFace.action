@@ -1,0 +1,10 @@
+float32 timeout_sec
+float32 min_confidence
+---
+bool success
+string user_name
+string role
+float32 confidence
+string message
+---
+string status
