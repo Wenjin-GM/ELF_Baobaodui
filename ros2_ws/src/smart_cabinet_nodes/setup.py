@@ -26,6 +26,7 @@ setup(
             "cabinet_logic_node = smart_cabinet_nodes.cabinet_logic_node:main",
             "ui_node = smart_cabinet_nodes.ui_node:main",
             "console_monitor = smart_cabinet_nodes.console_monitor:main",
+            "scenario_player = smart_cabinet_nodes.scenario_player:main",
         ],
     },
 )

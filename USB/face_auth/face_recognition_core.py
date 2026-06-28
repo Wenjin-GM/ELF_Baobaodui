@@ -9,6 +9,8 @@
 """
 import cv2
 import numpy as np
+import sys
+import types
 from pathlib import Path
 from sklearn.neighbors import NearestNeighbors
 
@@ -20,7 +22,19 @@ class FaceRecognizer:
     """人脸识别器: InsightFace 检测+对齐+特征 + k-NN分类"""
 
     def __init__(self, face_db_dir="face_db"):
-        # 延迟导入，避免启动时太慢
+        # 延迟导入，避免启动时太慢。
+        #
+        # InsightFace 的 app/__init__.py 会顺带导入 mask_renderer，
+        # 进而导入 face3d/mpl_toolkits.mplot3d。板端当前 matplotlib
+        # 是 pip 与 apt 组件混装，mplot3d 会因旧 API 不兼容而失败。
+        # 人脸识别只需要 FaceAnalysis，这里用空模块屏蔽 mask_renderer
+        # 的可选 3D 渲染依赖，避免修改系统 Python 包。
+        mask_renderer_name = "insightface.app.mask_renderer"
+        if mask_renderer_name not in sys.modules:
+            stub = types.ModuleType(mask_renderer_name)
+            stub.__all__ = []
+            sys.modules[mask_renderer_name] = stub
+
         from insightface.app import FaceAnalysis
 
         self.app = FaceAnalysis(name="buffalo_s", root="~/.insightface")
