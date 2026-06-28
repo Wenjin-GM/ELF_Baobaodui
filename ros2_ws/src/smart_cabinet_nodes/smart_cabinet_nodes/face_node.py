@@ -23,11 +23,15 @@ class FaceNode(Node):
         self.declare_parameter("min_confidence", 0.45)
         self.declare_parameter("frame_interval_sec", 0.2)
         self.declare_parameter("dry_run", False)
+        self.declare_parameter("admin_names", "赵增辉,高莫")
         self.declare_parameter("mock_user_name", "")
         self.declare_parameter("mock_role", "user")
         self.declare_parameter("mock_confidence", 0.9)
 
         self.dry_run = bool(self.get_parameter("dry_run").value)
+        self.admin_names = set(
+            n.strip() for n in str(self.get_parameter("admin_names").value).split(",") if n.strip()
+        )
         self.recognizer = None
         self.init_error = ""
         if not self.dry_run:
@@ -124,7 +128,7 @@ class FaceNode(Node):
                         if name and confidence >= min_conf:
                             result.success = True
                             result.user_name = str(name)
-                            result.role = "admin" if str(name) in {"赵增辉"} else "user"
+                            result.role = "admin" if str(name) in self.admin_names else "user"
                             result.confidence = float(confidence)
                             result.message = "face authenticated"
                             goal_handle.succeed()
