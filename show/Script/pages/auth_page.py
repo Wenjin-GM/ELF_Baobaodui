@@ -11,7 +11,7 @@ import os
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QPushButton, QGridLayout)
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtGui import QFont, QImage, QPixmap
 
 
 class AuthPage(QWidget):
@@ -192,15 +192,16 @@ class AuthPage(QWidget):
         if hasattr(self.backend, "preview_frame"):
             self.backend.preview_frame.connect(self._on_preview_frame)
 
-    @pyqtSlot(QPixmap)
-    def _on_preview_frame(self, pixmap):
-        """Receive frame from /face/preview topic."""
-        if self.camera_label is not None:
-            self.camera_label.setPixmap(pixmap.scaled(
+    @pyqtSlot(QImage)
+    def _on_preview_frame(self, qimg):
+        """Receive frame from /face/preview (QImage), convert to QPixmap in GUI thread."""
+        if self.camera_label is not None and qimg is not None and not qimg.isNull():
+            pixmap = QPixmap.fromImage(qimg).scaled(
                 self.camera_label.size(),
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
-            ))
+            )
+            self.camera_label.setPixmap(pixmap)
 
     def closeEvent(self, event):
         super().closeEvent(event)

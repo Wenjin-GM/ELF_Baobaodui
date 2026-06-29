@@ -22,7 +22,7 @@ class RosBackend(QObject):
     system_state_changed = pyqtSignal(str)
     event_added = pyqtSignal(dict)
     alarm_raised = pyqtSignal(dict)
-    preview_frame = pyqtSignal(QPixmap)
+    preview_frame = pyqtSignal(QImage)
 
     def __init__(self):
         super().__init__()
@@ -152,15 +152,20 @@ class RosBackend(QObject):
         self.event_added.emit({"type": "ui", "content": content, "level": level})
 
     def _on_preview(self, msg):
-        """Convert /face/preview ROS Image to QPixmap and emit."""
+        """Convert /face/preview ROS Image to QImage in ROS thread."""
         try:
             arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
-            if arr.shape[2] == 3:
-                arr = arr[..., ::-1]  # BGR → RGB
-            qimg = QImage(arr.data, msg.width, msg.height, arr.strides[0], QImage.Format_RGB888).copy()
-            self.preview_frame.emit(QPixmap.fromImage(qimg))
-        except Exception:
-            pass
+            if arr.shape[2] == 4:
+                fmt = QImage.Format_RGBA8888
+            elif arr.shape[2] == 3:
+                arr = arr[..., ::-1].copy()  # BGR → RGB, force contiguous
+                fmt = QImage.Format_RGB888
+            else:
+                fmt = QImage.Format_Grayscale8
+            qimg = QImage(arr.data, msg.width, msg.height, arr.strides[0], fmt).copy()
+            self.preview_frame.emit(qimg)
+        except Exception as exc:
+            self.node.get_logger().error(f"preview decode failed: {exc}")
 
     def _loads(self, text: str) -> Dict[str, Any]:
         try:

@@ -148,7 +148,8 @@ class FaceNode(Node):
             goal_handle.succeed()
             return result
 
-        # Use the persistent camera — reopen if needed
+        # Use latest frame from preview loop — never read camera directly here
+        # to avoid racing with _publish_preview() on the same VideoCapture.
         if self.cap is None:
             self._open_camera()
         if self.cap is None:
@@ -169,9 +170,9 @@ class FaceNode(Node):
                 feedback.status = f"recognizing {remaining:.1f}s"
                 goal_handle.publish_feedback(feedback)
 
-                # Read frame — the same camera also feeds /face/preview
-                ok, frame = self.cap.read()
-                if ok and frame is not None:
+                with self._frame_lock:
+                    frame = self._latest_frame.copy() if self._latest_frame is not None else None
+                if frame is not None:
                     face = self.recognizer.detect_face(frame)
                     if face is not None:
                         feat = self.recognizer.extract_feature(face)
