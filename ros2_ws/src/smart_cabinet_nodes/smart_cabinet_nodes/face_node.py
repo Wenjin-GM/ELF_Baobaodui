@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
 import time
 from pathlib import Path
 
 import cv2
 import rclpy
+from cv_bridge import CvBridge
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 
 from smart_cabinet_interfaces.action import AuthenticateFace
 
@@ -51,6 +54,19 @@ class FaceNode(Node):
         else:
             self.get_logger().info("dry_run enabled; face action uses mock_user_name")
 
+        # ---- camera & preview ----
+        self.cap = None
+        self._latest_frame = None
+        self._frame_lock = threading.Lock()
+        self._bridge = CvBridge()
+        self.preview_pub = self.create_publisher(Image, "/face/preview", 10)
+        self._open_camera()
+        if self.cap is not None:
+            fps = 1.0 / max(0.1, float(self.get_parameter("frame_interval_sec").value))
+            self.preview_timer = self.create_timer(1.0 / fps, self._publish_preview)
+            self.get_logger().info(f"camera preview active on /face/preview ({fps:.0f} fps)")
+
+        # ---- auth action ----
         self.action_server = ActionServer(
             self,
             AuthenticateFace,
@@ -59,6 +75,41 @@ class FaceNode(Node):
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
         )
+
+    # ── camera ────────────────────────────────────────────────────────
+
+    def _open_camera(self):
+        if self.dry_run:
+            return
+        device = str(self.get_parameter("camera").value)
+        self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
+        if not self.cap.isOpened():
+            self.get_logger().warn(f"camera {device} not available for preview")
+            self.cap.release()
+            self.cap = None
+
+    def _close_camera(self):
+        if self.cap is not None:
+            self.cap.release()
+            self.cap = None
+
+    def _publish_preview(self):
+        if self.cap is None:
+            return
+        ok, frame = self.cap.read()
+        if not ok or frame is None:
+            return
+        with self._frame_lock:
+            self._latest_frame = frame
+        try:
+            msg = self._bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "face_camera"
+            self.preview_pub.publish(msg)
+        except Exception as exc:
+            self.get_logger().warn(f"preview publish error: {exc}")
+
+    # ── action callbacks ──────────────────────────────────────────────
 
     def goal_callback(self, goal_request):
         if goal_request.timeout_sec <= 0:
@@ -93,15 +144,14 @@ class FaceNode(Node):
 
         if self.recognizer is None:
             result.success = False
-            result.user_name = ""
-            result.role = ""
-            result.confidence = 0.0
             result.message = f"face unavailable: {self.init_error or 'not initialized'}"
             goal_handle.succeed()
             return result
 
-        cap = cv2.VideoCapture(str(self.get_parameter("camera").value), cv2.CAP_V4L2)
-        if not cap.isOpened():
+        # Use the persistent camera — reopen if needed
+        if self.cap is None:
+            self._open_camera()
+        if self.cap is None:
             result.success = False
             result.message = "camera open failed"
             goal_handle.abort()
@@ -119,7 +169,8 @@ class FaceNode(Node):
                 feedback.status = f"recognizing {remaining:.1f}s"
                 goal_handle.publish_feedback(feedback)
 
-                ok, frame = cap.read()
+                # Read frame — the same camera also feeds /face/preview
+                ok, frame = self.cap.read()
                 if ok and frame is not None:
                     face = self.recognizer.detect_face(frame)
                     if face is not None:
@@ -136,17 +187,15 @@ class FaceNode(Node):
 
                 time.sleep(float(self.get_parameter("frame_interval_sec").value))
         finally:
-            cap.release()
+            pass  # camera stays open for preview
 
         result.success = False
-        result.user_name = ""
-        result.role = ""
-        result.confidence = 0.0
         result.message = "timeout"
         goal_handle.succeed()
         return result
 
     def destroy_node(self):
+        self._close_camera()
         if self.action_server is not None:
             self.action_server.destroy()
         super().destroy_node()

@@ -146,6 +146,8 @@ class ActuatorNode(Node):
             return response
 
         self.lock_busy = True
+        tag = "(dry-run) " if self.lock is None else ""
+        self.get_logger().info(f"{tag}open_lock pulse={requested:.3f}s")
         try:
             if self.lock is not None:
                 self.lock.on()
@@ -167,6 +169,8 @@ class ActuatorNode(Node):
         return response
 
     def set_fan(self, request, response):
+        tag = "(dry-run) " if self.fan is None else ""
+        self.get_logger().info(f"{tag}set_fan on={request.on} reason={request.reason}")
         try:
             if self.fan is not None:
                 if request.on:

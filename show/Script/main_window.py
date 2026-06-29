@@ -22,6 +22,7 @@ from pages.environment_page import EnvironmentPage
 from pages.records_page import RecordsPage
 from pages.settings_page import SettingsPage
 from pages.debug_page import DebugPage
+import os
 
 
 class MainWindow(QMainWindow):
@@ -322,21 +323,36 @@ class MainWindow(QMainWindow):
 
         current_user = summary.get("current_user") or {}
         auth = summary.get("auth") or {}
-        if current_user:
+        _v = os.environ.get("SMART_CABINET_UI_DEBUG", "")
+        if _v and _v != "0":
+            print(f"[UI-DEBUG] state={state_name} user={current_user} auth_success={auth.get('success')}")
+        if current_user and current_user.get("name"):
             self.state_machine._current_user = {
                 "name": current_user.get("name") or current_user.get("user_name") or "",
                 "role": current_user.get("role") or "user",
             }
+            if _v and _v != "0":
+                print(f"[UI-DEBUG]   → _current_user={self.state_machine._current_user}")
         elif auth.get("success"):
             self.state_machine._current_user = {
                 "name": auth.get("user_name") or auth.get("name") or "",
                 "role": auth.get("role") or "user",
             }
+            if _v and _v != "0":
+                print(f"[UI-DEBUG]   → _current_user(from auth)={self.state_machine._current_user}")
         else:
             self.state_machine._current_user = None
+            if _v and _v != "0":
+                print(f"[UI-DEBUG]   → _current_user=NONE (cleared!)")
 
+        if _v and _v != "0":
+            print(f"[UI-DEBUG]   current_state={self.state_machine.current_state.value} → {new_state.value}")
         if self.state_machine.current_state != new_state:
-            self.state_machine.transition_to(new_state)
+            auto_page = not (
+                self.state_machine.current_state == SystemState.CHECKING_AFTER_CLOSE
+                and new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED)
+            )
+            self.state_machine.transition_to(new_state, auto_switch_page=auto_page)
         else:
             self._on_state_changed(new_state, new_state)
         self._update_navigation()

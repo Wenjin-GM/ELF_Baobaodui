@@ -8,15 +8,10 @@
 
 import os
 
-try:
-    import cv2
-except Exception:
-    cv2 = None
-
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QPushButton, QGridLayout)
-from PyQt5.QtCore import Qt, QTimer, pyqtSlot
-from PyQt5.QtGui import QFont, QImage, QPixmap
+from PyQt5.QtCore import Qt, pyqtSlot
+from PyQt5.QtGui import QFont, QPixmap
 
 
 class AuthPage(QWidget):
@@ -26,15 +21,10 @@ class AuthPage(QWidget):
         super().__init__()
         self.state_machine = state_machine
         self.backend = backend
-        self.camera_cap = None
         self.camera_label = None
-        self.camera_device = os.environ.get("SMART_CABINET_AUTH_PREVIEW_CAMERA", "/dev/video11")
-        self.camera_timer = QTimer(self)
-        self.camera_timer.timeout.connect(self._update_camera_preview)
 
         self._init_ui()
         self._init_connections()
-        self._start_camera_preview()
 
     def _init_ui(self):
         """初始化UI"""
@@ -199,41 +189,20 @@ class AuthPage(QWidget):
     def _init_connections(self):
         """初始化信号连接"""
         self.backend.auth_updated.connect(self._on_auth_updated)
+        if hasattr(self.backend, "preview_frame"):
+            self.backend.preview_frame.connect(self._on_preview_frame)
 
-    def _start_camera_preview(self):
-        if cv2 is None or self.camera_cap is not None:
-            return
-        self.camera_cap = cv2.VideoCapture(self.camera_device, cv2.CAP_V4L2)
-        if not self.camera_cap.isOpened():
-            self.camera_cap.release()
-            self.camera_cap = None
-            return
-        self.camera_timer.start(100)
-
-    def _stop_camera_preview(self):
-        self.camera_timer.stop()
-        if self.camera_cap is not None:
-            self.camera_cap.release()
-            self.camera_cap = None
-
-    def _update_camera_preview(self):
-        if self.camera_cap is None or self.camera_label is None:
-            return
-        ok, frame = self.camera_cap.read()
-        if not ok or frame is None:
-            return
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        height, width, channels = frame.shape
-        image = QImage(frame.data, width, height, channels * width, QImage.Format_RGB888).copy()
-        pixmap = QPixmap.fromImage(image).scaled(
-            self.camera_label.size(),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        )
-        self.camera_label.setPixmap(pixmap)
+    @pyqtSlot(QPixmap)
+    def _on_preview_frame(self, pixmap):
+        """Receive frame from /face/preview topic."""
+        if self.camera_label is not None:
+            self.camera_label.setPixmap(pixmap.scaled(
+                self.camera_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            ))
 
     def closeEvent(self, event):
-        self._stop_camera_preview()
         super().closeEvent(event)
 
     @pyqtSlot(dict)

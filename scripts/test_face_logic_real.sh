@@ -216,9 +216,9 @@ run_success() {
   _assert "accepted" "accepted=True" "$LOG_DIR/${CURRENT_PHASE}_inventory.txt"
   sleep 3
 
-  _start_step "inventory_state" "CHECKING_AFTER_CLOSE -> STANDBY"
+  _start_step "inventory_state" "CHECKING_AFTER_CLOSE -> back to auth"
   _assert_log "enter checking" "USER_AUTHED -> CHECKING_AFTER_CLOSE"
-  _assert_log "back to STANDBY" "CHECKING_AFTER_CLOSE -> STANDBY"
+  _assert_log "back to AUTHED" "CHECKING_AFTER_CLOSE -> ADMIN_AUTHED|CHECKING_AFTER_CLOSE -> USER_AUTHED"
 
   stop_nodes
 }

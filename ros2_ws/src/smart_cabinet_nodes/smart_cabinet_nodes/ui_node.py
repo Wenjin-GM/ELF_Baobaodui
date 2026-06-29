@@ -122,6 +122,24 @@ def run_bridge(args):
                 end = time.monotonic() + 3.0
                 while time.monotonic() < end:
                     rclpy.spin_once(node, timeout_sec=0.1)
+            if args.request_open:
+                accepted = node.request_open(timeout_sec=float(args.request_open_timeout))
+                node.get_logger().info(f"request_open accepted={accepted}")
+                end = time.monotonic() + 3.0
+                while time.monotonic() < end:
+                    rclpy.spin_once(node, timeout_sec=0.1)
+            if args.request_fan_on:
+                accepted = node.request_manual_fan(True, "ui_node_test")
+                node.get_logger().info(f"request_manual_fan(on) accepted={accepted}")
+                end = time.monotonic() + 2.0
+                while time.monotonic() < end:
+                    rclpy.spin_once(node, timeout_sec=0.1)
+            if args.request_fan_off:
+                accepted = node.request_manual_fan(False, "ui_node_test")
+                node.get_logger().info(f"request_manual_fan(off) accepted={accepted}")
+                end = time.monotonic() + 2.0
+                while time.monotonic() < end:
+                    rclpy.spin_once(node, timeout_sec=0.1)
             print(
                 "UI_NODE_TEST "
                 f"summary={node.summary_count} "
@@ -185,6 +203,10 @@ def main(argv=None):
     parser.add_argument("--bridge-only", action="store_true", help="Run subscriptions/services without PyQt window")
     parser.add_argument("--test", action="store_true", help="Bridge smoke test and exit")
     parser.add_argument("--request-inventory", action="store_true", help="Request mock/real inventory during --test")
+    parser.add_argument("--request-open", action="store_true", help="Call /cabinet/request_open during --test")
+    parser.add_argument("--request-open-timeout", type=float, default=5.0)
+    parser.add_argument("--request-fan-on", action="store_true", help="Call /cabinet/request_manual_fan(on) during --test")
+    parser.add_argument("--request-fan-off", action="store_true", help="Call /cabinet/request_manual_fan(off) during --test")
     parser.add_argument("--test-timeout-sec", type=float, default=5.0)
     parser.add_argument("--show-dir", default=os.environ.get("SMART_CABINET_SHOW_DIR", "~/smart_tool_cabinet/show/Script"))
     parser.add_argument("--windowed", action="store_true", help="Run the PyQt UI in a normal window instead of fullscreen")

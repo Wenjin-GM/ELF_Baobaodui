@@ -8,7 +8,9 @@ import json
 import threading
 from typing import Any, Dict, List
 
+import numpy as np
 from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap
 
 
 class RosBackend(QObject):
@@ -20,6 +22,7 @@ class RosBackend(QObject):
     system_state_changed = pyqtSignal(str)
     event_added = pyqtSignal(dict)
     alarm_raised = pyqtSignal(dict)
+    preview_frame = pyqtSignal(QPixmap)
 
     def __init__(self):
         super().__init__()
@@ -27,6 +30,7 @@ class RosBackend(QObject):
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.node import Node
         from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+        from sensor_msgs.msg import Image
         from std_msgs.msg import String
         from std_srvs.srv import Trigger
         from smart_cabinet_interfaces.srv import RequestInventory, RequestManualFan, RequestOpen, RequestTempUnlock
@@ -61,6 +65,7 @@ class RosBackend(QObject):
         self.node.create_subscription(String, "/ui/battery", self._on_battery, qos)
         self.node.create_subscription(String, "/ui/auth", self._on_auth, qos)
         self.node.create_subscription(String, "/ui/events", self._on_event, 50)
+        self.node.create_subscription(Image, "/face/preview", self._on_preview, 10)
 
         self.open_client = self.node.create_client(RequestOpen, "/cabinet/request_open")
         self.inventory_client = self.node.create_client(RequestInventory, "/cabinet/request_inventory")
@@ -145,6 +150,17 @@ class RosBackend(QObject):
             level = "warning"
         self.node.get_logger().info(content)
         self.event_added.emit({"type": "ui", "content": content, "level": level})
+
+    def _on_preview(self, msg):
+        """Convert /face/preview ROS Image to QPixmap and emit."""
+        try:
+            arr = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
+            if arr.shape[2] == 3:
+                arr = arr[..., ::-1]  # BGR → RGB
+            qimg = QImage(arr.data, msg.width, msg.height, arr.strides[0], QImage.Format_RGB888).copy()
+            self.preview_frame.emit(QPixmap.fromImage(qimg))
+        except Exception:
+            pass
 
     def _loads(self, text: str) -> Dict[str, Any]:
         try:

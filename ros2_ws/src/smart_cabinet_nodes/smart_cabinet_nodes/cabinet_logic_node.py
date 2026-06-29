@@ -121,6 +121,14 @@ class CabinetLogicNode(Node):
         self.publish_state()
         self.publish_all_ui()
 
+    def _prev_auth_state(self) -> str:
+        """Return the authenticated state the user was in before an
+        operation (inventory, etc.), or STANDBY if no user is logged in."""
+        if self.current_user and self.current_user.get("name"):
+            role = self.current_user.get("role", "user")
+            return "ADMIN_AUTHED" if role == "admin" else "USER_AUTHED"
+        return "STANDBY"
+
     def publish_state(self):
         payload = {
             "state": self.state,
@@ -382,9 +390,7 @@ class CabinetLogicNode(Node):
             if bool(self.get_parameter("simulate_missing_vision").value):
                 self.add_event("inventory", "vision_node offline; using mock inventory result", "info")
                 self.apply_mock_inventory(reason)
-                self.current_user = None
-                self.last_auth = {}
-                self.set_state("STANDBY")
+                self.set_state(self._prev_auth_state())
                 return
             self.add_event("盘点", "vision_node 未上线，无法盘点", "warning")
             self.set_state("ALARM_ACTIVE")
@@ -419,9 +425,7 @@ class CabinetLogicNode(Node):
         self.publish_ui_inventory()
         if result.success and result.is_normal:
             self.add_event("盘点", "盘点正常", "info")
-            self.current_user = None
-            self.last_auth = {}
-            self.set_state("STANDBY")
+            self.set_state(self._prev_auth_state())
         else:
             self.add_event("盘点", f"盘点异常: {result.message}", "warning")
             self.call_beep()

@@ -201,8 +201,8 @@ run_success() {
   _start_step "inventory_state_1" "enters CHECKING_AFTER_CLOSE"
   _assert_log "enter checking" "USER_AUTHED -> CHECKING_AFTER_CLOSE"
 
-  _start_step "inventory_state_2" "returns to STANDBY with mock"
-  _assert_log "back to STANDBY" "CHECKING_AFTER_CLOSE -> STANDBY"
+  _start_step "inventory_state_2" "returns to auth state with mock"
+  _assert_log "back to auth" "CHECKING_AFTER_CLOSE -> USER_AUTHED|CHECKING_AFTER_CLOSE -> ADMIN_AUTHED"
   _assert_log "mock used" "vision_node offline; using mock inventory result"
 
   stop_nodes
