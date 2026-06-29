@@ -210,27 +210,27 @@ class EnvironmentPage(QWidget):
         temp_label.setStyleSheet("font-size: 14px; color: #1F2421;")
         info_layout.addWidget(temp_label, 0, 0)
 
-        temp_value = QLabel("5 - 40 ℃")
-        temp_value.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
-        info_layout.addWidget(temp_value, 0, 1)
+        self._temp_threshold_label = QLabel("5 - 40 ℃")
+        self._temp_threshold_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
+        info_layout.addWidget(self._temp_threshold_label, 0, 1)
 
         # 湿度阈值
-        humidity_label = QLabel("湿度上限:")
+        humidity_label = QLabel("湿度范围:")
         humidity_label.setStyleSheet("font-size: 14px; color: #1F2421;")
         info_layout.addWidget(humidity_label, 1, 0)
 
-        humidity_value = QLabel("≤ 60 %RH")
-        humidity_value.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
-        info_layout.addWidget(humidity_value, 1, 1)
+        self._humidity_threshold_label = QLabel("≤ 60 %RH")
+        self._humidity_threshold_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
+        info_layout.addWidget(self._humidity_threshold_label, 1, 1)
 
         # 风扇启动条件
-        fan_on_label = QLabel("风扇开启:")
+        fan_on_label = QLabel("风扇触发:")
         fan_on_label.setStyleSheet("font-size: 14px; color: #1F2421;")
         info_layout.addWidget(fan_on_label, 2, 0)
 
-        fan_on_value = QLabel("湿度 > 55% 或 温度 > 35℃")
-        fan_on_value.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
-        info_layout.addWidget(fan_on_value, 2, 1)
+        self._fan_trigger_label = QLabel("湿度 > 55% 或 温度 > 35℃")
+        self._fan_trigger_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #5C635D;")
+        info_layout.addWidget(self._fan_trigger_label, 2, 1)
 
         # 风扇关闭条件
         fan_off_label = QLabel("风扇关闭:")
@@ -303,6 +303,15 @@ class EnvironmentPage(QWidget):
 
         # 更新时间
         self.update_time_label.setText(f"更新时间: {datetime.now().strftime('%H:%M:%S')}")
+
+        # 动态阈值（来自 cabinet_logic_node）
+        h_on = data.get("humidity_on", 55)
+        h_off = data.get("humidity_off", 50)
+        t_on = data.get("temp_on", 35)
+        t_off = data.get("temp_off", 5)
+        self._temp_threshold_label.setText(f"{t_off} - {t_on} ℃")
+        self._humidity_threshold_label.setText(f"{h_off} - {h_on} %RH")
+        self._fan_trigger_label.setText(f"湿度 > {h_on}% 或 温度 > {t_on}℃")
 
         # 风扇状态
         if data['fan_on']:

@@ -11,7 +11,10 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QComboBox, QHeaderView)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QFont
-from datetime import datetime
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
 
 
 class RecordsPage(QWidget):
@@ -22,10 +25,11 @@ class RecordsPage(QWidget):
         self.state_machine = state_machine
         self.backend = backend
 
-        self.records = []  # 存储所有记录
+        self.records = []
 
         self._init_ui()
         self._init_connections()
+        self._load_historical_records()
 
     def _init_ui(self):
         """初始化UI"""
@@ -123,23 +127,61 @@ class RecordsPage(QWidget):
         self.stats_label.setStyleSheet("font-size: 14px; color: #5C635D;")
         layout.addWidget(self.stats_label)
 
+    @staticmethod
+    def _parse_ts(ts_str: str) -> str:
+        """Parse ISO timestamp, return formatted string or raw if unparseable."""
+        try:
+            s = ts_str.replace(" ", "T")
+            if s[-5] in "+-" and ":" not in s[-5:]:
+                s = s[:-2] + ":" + s[-2:]
+            dt = datetime.fromisoformat(s)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return ts_str
+
+    _DISPLAY_TYPES = {"认证", "盘点", "inventory", "开柜"}
+
+    def _load_historical_records(self):
+        """Load auth + inventory events from data/events/."""
+        for candidate in (
+            Path.home() / "smart_tool_cabinet" / "data" / "events",
+            Path(__file__).resolve().parents[3] / "data" / "events",
+        ):
+            if candidate.is_dir():
+                files = sorted(candidate.glob("*_event.json"), reverse=True)
+                for f in files[:200]:
+                    try:
+                        d = json.loads(f.read_text(encoding="utf-8"))
+                        if d.get("type", "") not in self._DISPLAY_TYPES:
+                            continue
+                        self.records.append({
+                            "timestamp": d.get("timestamp", ""),
+                            "type": d.get("type", ""),
+                            "content": d.get("content", ""),
+                            "level": d.get("level", "info"),
+                        })
+                    except Exception:
+                        pass
+                break
+        self._refresh_table()
+
     def _init_connections(self):
         """初始化信号连接"""
         self.backend.event_added.connect(self._on_event_added)
 
     @pyqtSlot(dict)
     def _on_event_added(self, event):
-        """新事件添加"""
-        # 添加到记录列表
+        """新事件——只收录认证/盘点/开柜"""
+        etype = event.get("type", event.get("event_type", ""))
+        if etype not in self._DISPLAY_TYPES:
+            return
         record = {
-            "timestamp": event['timestamp'],
-            "type": event['type'],
-            "content": event['content'],
-            "level": event['level']
+            "timestamp": event.get("timestamp", ""),
+            "type": etype,
+            "content": event.get("content", ""),
+            "level": event.get("level", "info"),
         }
         self.records.append(record)
-
-        # 刷新显示
         self._refresh_table()
 
     def _refresh_table(self):
@@ -160,7 +202,7 @@ class RecordsPage(QWidget):
             self.table.insertRow(row)
 
             # 时间
-            time_str = datetime.fromisoformat(record['timestamp']).strftime("%Y-%m-%d %H:%M:%S")
+            time_str = self._parse_ts(record.get('timestamp', ''))
             time_item = QTableWidgetItem(time_str)
             time_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 0, time_item)

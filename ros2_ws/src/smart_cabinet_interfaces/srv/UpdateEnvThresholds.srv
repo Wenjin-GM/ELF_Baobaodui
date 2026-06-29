@@ -1,0 +1,7 @@
+float64 humidity_on
+float64 humidity_off
+float64 temp_on
+float64 temp_off
+---
+bool accepted
+string message

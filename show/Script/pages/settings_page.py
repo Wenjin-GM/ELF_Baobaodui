@@ -284,9 +284,21 @@ class SettingsPage(QWidget):
         """
 
     def _save_env_settings(self):
-        """保存环境设置"""
-        print("[SettingsPage] 保存环境阈值设置")
-        QMessageBox.information(self, "设置", "环境阈值设置已保存")
+        """保存环境设置——写入 cabinet_logic_node 参数"""
+        h_on = self.fan_on_spin.value()
+        h_off = self.fan_off_spin.value()
+        t_on = self.temp_max_spin.value()
+        t_off = self.temp_min_spin.value()
+        if hasattr(self.backend, "update_env_thresholds"):
+            self.backend.update_env_thresholds(
+                humidity_on=h_on, humidity_off=h_off,
+                temp_on=t_on, temp_off=t_off,
+            )
+            QMessageBox.information(self, "设置",
+                f"环境阈值已更新:\n风扇开 {h_on}%RH / 关 {h_off}%RH\n"
+                f"温度 {t_off}~{t_on}℃")
+        else:
+            QMessageBox.warning(self, "设置", "后端不支持在线更新阈值")
 
     def _enter_maintenance(self):
         """进入维护模式"""

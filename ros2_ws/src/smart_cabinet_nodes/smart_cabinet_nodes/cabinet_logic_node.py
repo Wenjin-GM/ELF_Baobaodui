@@ -22,6 +22,7 @@ from smart_cabinet_interfaces.srv import (
     RequestManualFan,
     RequestOpen,
     RequestTempUnlock,
+    UpdateEnvThresholds,
     SetFan,
 )
 
@@ -95,6 +96,7 @@ class CabinetLogicNode(Node):
         self.create_service(RequestManualFan, "/cabinet/request_manual_fan", self.request_manual_fan, callback_group=self.callback_group)
         self.create_service(RequestTempUnlock, "/cabinet/request_temp_unlock", self.request_temp_unlock, callback_group=self.callback_group)
         self.create_service(Trigger, "/cabinet/logout", self.request_logout, callback_group=self.callback_group)
+        self.create_service(UpdateEnvThresholds, "/cabinet/update_env_thresholds", self.update_env_thresholds, callback_group=self.callback_group)
 
         self.ui_timer = self.create_timer(1.0, self.publish_all_ui)
         self.publish_state()
@@ -179,7 +181,22 @@ class CabinetLogicNode(Node):
         self.last_inventory_image = msg.data
         self.pub_ui_inventory_image.publish(String(data=msg.data))
 
+    def _load_env_thresholds(self):
+        """Load custom thresholds from data/env_thresholds.json if present."""
+        from .common import PROJECT_ROOT
+        path = PROJECT_ROOT / "data" / "env_thresholds.json"
+        try:
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                for key in ("humidity_on", "humidity_off", "temp_on", "temp_off"):
+                    if key in data:
+                        from rclpy.parameter import Parameter
+                        self.set_parameters([Parameter(key, Parameter.Type.DOUBLE, float(data[key]))])
+        except Exception:
+            pass
+
     def handle_env_control(self):
+        self._load_env_thresholds()
         if not self.last_env.get("valid", False):
             return
         humidity = float(self.last_env.get("humidity", 0.0))
@@ -475,6 +492,23 @@ class CabinetLogicNode(Node):
         self.publish_all_ui()
         return response
 
+    def update_env_thresholds(self, request, response):
+        from rclpy.parameter import Parameter
+        h_on = float(request.humidity_on)
+        h_off = float(request.humidity_off)
+        t_on = float(request.temp_on)
+        t_off = float(request.temp_off)
+        self.set_parameters([
+            Parameter("humidity_on", Parameter.Type.DOUBLE, h_on),
+            Parameter("humidity_off", Parameter.Type.DOUBLE, h_off),
+            Parameter("temp_on", Parameter.Type.DOUBLE, t_on),
+            Parameter("temp_off", Parameter.Type.DOUBLE, t_off),
+        ])
+        response.accepted = True
+        response.message = f"thresholds updated H_on={h_on} H_off={h_off} T_on={t_on} T_off={t_off}"
+        self.add_event("设置", response.message, "info")
+        return response
+
     def publish_all_ui(self):
         try:
             self.publish_state()
@@ -513,6 +547,10 @@ class CabinetLogicNode(Node):
             "valid": self.last_env.get("valid", False),
             "fan_on": self.last_actuator.get("fan_on", self.fan_auto_on),
             "alarm_on": self.state == "ALARM_ACTIVE",
+            "humidity_on": float(self.get_parameter("humidity_on").value),
+            "humidity_off": float(self.get_parameter("humidity_off").value),
+            "temp_on": float(self.get_parameter("temp_on").value),
+            "temp_off": float(self.get_parameter("temp_off").value),
             "timestamp": now_iso(),
         }
         self.pub_ui_environment.publish(String(data=json_text(payload)))

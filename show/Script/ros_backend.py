@@ -117,6 +117,19 @@ class RosBackend(QObject):
     def simulate_auth_success(self, user_name: str = "demo_user", role: str = "user"):
         self.request_open_cabinet()
 
+    def update_env_thresholds(self, humidity_on: float, humidity_off: float, temp_on: float, temp_off: float):
+        """Write thresholds to JSON file — cabinet_logic_node reads it on each env check."""
+        import json
+        from pathlib import Path
+        data = {
+            "humidity_on": float(humidity_on), "humidity_off": float(humidity_off),
+            "temp_on": float(temp_on), "temp_off": float(temp_off),
+        }
+        path = Path.home() / "smart_tool_cabinet" / "data" / "env_thresholds.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.node.get_logger().info(f"env thresholds written: {data}")
+
     def simulate_auth_failed(self):
         self.event_added.emit({"type": "auth", "content": "auth failed requested from UI", "level": "warning"})
 

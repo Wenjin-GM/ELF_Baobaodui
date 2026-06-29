@@ -54,17 +54,16 @@ class FaceNode(Node):
         else:
             self.get_logger().info("dry_run enabled; face action uses mock_user_name")
 
-        # ---- camera & preview ----
+        # ---- camera ----
         self.cap = None
         self._latest_frame = None
         self._frame_lock = threading.Lock()
+        self._capture_running = False
+        self._capture_thread = None
+        self._preview_timer = None
         self._bridge = CvBridge()
         self.preview_pub = self.create_publisher(Image, "/face/preview", 10)
-        self._open_camera()
-        if self.cap is not None:
-            fps = 1.0 / max(0.1, float(self.get_parameter("frame_interval_sec").value))
-            self.preview_timer = self.create_timer(1.0 / fps, self._publish_preview)
-            self.get_logger().info(f"camera preview active on /face/preview ({fps:.0f} fps)")
+        self._start_capture()
 
         # ---- auth action ----
         self.action_server = ActionServer(
@@ -78,29 +77,51 @@ class FaceNode(Node):
 
     # ── camera ────────────────────────────────────────────────────────
 
-    def _open_camera(self):
-        if self.dry_run:
+    def _start_capture(self):
+        """Open camera + start capture thread + create preview timer."""
+        if self.dry_run or self._capture_running:
             return
         device = str(self.get_parameter("camera").value)
         self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
         if not self.cap.isOpened():
-            self.get_logger().warn(f"camera {device} not available for preview")
+            self.get_logger().warn(f"camera {device} not available")
             self.cap.release()
             self.cap = None
+            return
+        self._capture_running = True
+        self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._capture_thread.start()
+        if self._preview_timer is None:
+            fps = 1.0 / max(0.1, float(self.get_parameter("frame_interval_sec").value))
+            self._preview_timer = self.create_timer(1.0 / fps, self._publish_preview)
+        self.get_logger().info(f"camera capture started on /face/preview")
 
-    def _close_camera(self):
+    def _stop_capture(self):
+        """Stop capture thread, join, then release camera."""
+        self._capture_running = False
+        if self._capture_thread is not None and self._capture_thread.is_alive():
+            self._capture_thread.join(timeout=1.0)
+            self._capture_thread = None
         if self.cap is not None:
             self.cap.release()
             self.cap = None
 
+    def _capture_loop(self):
+        """Dedicated thread — only place that calls self.cap.read()."""
+        interval = max(0.02, float(self.get_parameter("frame_interval_sec").value))
+        while self._capture_running and self.cap is not None:
+            ok, frame = self.cap.read()
+            if ok and frame is not None:
+                with self._frame_lock:
+                    self._latest_frame = frame
+            time.sleep(interval)
+
     def _publish_preview(self):
-        if self.cap is None:
-            return
-        ok, frame = self.cap.read()
-        if not ok or frame is None:
-            return
+        """ROS timer callback — publishes latest frame, never touches camera."""
         with self._frame_lock:
-            self._latest_frame = frame
+            frame = self._latest_frame.copy() if self._latest_frame is not None else None
+        if frame is None:
+            return
         try:
             msg = self._bridge.cv2_to_imgmsg(frame, encoding="bgr8")
             msg.header.stamp = self.get_clock().now().to_msg()
@@ -150,9 +171,9 @@ class FaceNode(Node):
 
         # Use latest frame from preview loop — never read camera directly here
         # to avoid racing with _publish_preview() on the same VideoCapture.
-        if self.cap is None:
-            self._open_camera()
-        if self.cap is None:
+        if self.cap is None or not self._capture_running:
+            self._start_capture()
+        if self.cap is None or not self._capture_running:
             result.success = False
             result.message = "camera open failed"
             goal_handle.abort()
@@ -196,7 +217,7 @@ class FaceNode(Node):
         return result
 
     def destroy_node(self):
-        self._close_camera()
+        self._stop_capture()
         if self.action_server is not None:
             self.action_server.destroy()
         super().destroy_node()

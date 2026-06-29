@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestInventory.srv"
   "srv/RequestManualFan.srv"
   "srv/RequestTempUnlock.srv"
+  "srv/UpdateEnvThresholds.srv"
   DEPENDENCIES builtin_interfaces std_msgs
 )
 
