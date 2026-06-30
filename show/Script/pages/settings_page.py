@@ -54,7 +54,7 @@ class SettingsPage(QWidget):
         layout.addStretch()
 
     def _create_env_settings_card(self) -> QFrame:
-        """创建环境阈值设置卡片"""
+        """创建环境阈值设置卡片 — 4 个真实阈值"""
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
@@ -77,60 +77,49 @@ class SettingsPage(QWidget):
         settings_layout = QGridLayout()
         settings_layout.setSpacing(12)
 
-        # 温度上限
-        temp_max_label = QLabel("温度上限 (℃):")
-        temp_max_label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(temp_max_label, 0, 0)
+        # 风扇开启温度  (temp_on)
+        label = QLabel("风扇开启温度 (℃):")
+        label.setStyleSheet("font-size: 14px; color: #1F2421;")
+        settings_layout.addWidget(label, 0, 0)
 
-        self.temp_max_spin = QSpinBox()
-        self.temp_max_spin.setRange(0, 60)
-        self.temp_max_spin.setValue(40)
-        self.temp_max_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.temp_max_spin, 0, 1)
+        self.temp_on_spin = QSpinBox()
+        self.temp_on_spin.setRange(0, 60)
+        self.temp_on_spin.setValue(35)
+        self.temp_on_spin.setStyleSheet("font-size: 14px; padding: 4px;")
+        settings_layout.addWidget(self.temp_on_spin, 0, 1)
 
-        # 温度下限
-        temp_min_label = QLabel("温度下限 (℃):")
-        temp_min_label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(temp_min_label, 1, 0)
+        # 风扇关闭温度  (temp_off)
+        label = QLabel("风扇关闭温度 (℃):")
+        label.setStyleSheet("font-size: 14px; color: #1F2421;")
+        settings_layout.addWidget(label, 1, 0)
 
-        self.temp_min_spin = QSpinBox()
-        self.temp_min_spin.setRange(-20, 40)
-        self.temp_min_spin.setValue(5)
-        self.temp_min_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.temp_min_spin, 1, 1)
+        self.temp_off_spin = QSpinBox()
+        self.temp_off_spin.setRange(0, 55)
+        self.temp_off_spin.setValue(30)
+        self.temp_off_spin.setStyleSheet("font-size: 14px; padding: 4px;")
+        settings_layout.addWidget(self.temp_off_spin, 1, 1)
 
-        # 湿度上限
-        humidity_max_label = QLabel("湿度上限 (%RH):")
-        humidity_max_label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(humidity_max_label, 2, 0)
+        # 风扇开启湿度  (humidity_on)
+        label = QLabel("风扇开启湿度 (%RH):")
+        label.setStyleSheet("font-size: 14px; color: #1F2421;")
+        settings_layout.addWidget(label, 2, 0)
 
-        self.humidity_max_spin = QSpinBox()
-        self.humidity_max_spin.setRange(0, 100)
-        self.humidity_max_spin.setValue(60)
-        self.humidity_max_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.humidity_max_spin, 2, 1)
+        self.humidity_on_spin = QSpinBox()
+        self.humidity_on_spin.setRange(0, 100)
+        self.humidity_on_spin.setValue(55)
+        self.humidity_on_spin.setStyleSheet("font-size: 14px; padding: 4px;")
+        settings_layout.addWidget(self.humidity_on_spin, 2, 1)
 
-        # 风扇开启阈值
-        fan_on_label = QLabel("风扇开启湿度 (%RH):")
-        fan_on_label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(fan_on_label, 3, 0)
+        # 风扇关闭湿度  (humidity_off)
+        label = QLabel("风扇关闭湿度 (%RH):")
+        label.setStyleSheet("font-size: 14px; color: #1F2421;")
+        settings_layout.addWidget(label, 3, 0)
 
-        self.fan_on_spin = QSpinBox()
-        self.fan_on_spin.setRange(0, 100)
-        self.fan_on_spin.setValue(55)
-        self.fan_on_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.fan_on_spin, 3, 1)
-
-        # 风扇关闭阈值
-        fan_off_label = QLabel("风扇关闭湿度 (%RH):")
-        fan_off_label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(fan_off_label, 4, 0)
-
-        self.fan_off_spin = QSpinBox()
-        self.fan_off_spin.setRange(0, 100)
-        self.fan_off_spin.setValue(50)
-        self.fan_off_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.fan_off_spin, 4, 1)
+        self.humidity_off_spin = QSpinBox()
+        self.humidity_off_spin.setRange(0, 100)
+        self.humidity_off_spin.setValue(50)
+        self.humidity_off_spin.setStyleSheet("font-size: 14px; padding: 4px;")
+        settings_layout.addWidget(self.humidity_off_spin, 3, 1)
 
         layout.addLayout(settings_layout)
 
@@ -284,11 +273,11 @@ class SettingsPage(QWidget):
         """
 
     def _save_env_settings(self):
-        """保存环境设置——写入 cabinet_logic_node 参数"""
-        h_on = self.fan_on_spin.value()
-        h_off = self.fan_off_spin.value()
-        t_on = self.temp_max_spin.value()
-        t_off = self.temp_min_spin.value()
+        """保存环境设置——调用 /cabinet/update_env_thresholds service"""
+        h_on = self.humidity_on_spin.value()
+        h_off = self.humidity_off_spin.value()
+        t_on = self.temp_on_spin.value()
+        t_off = self.temp_off_spin.value()
         if hasattr(self.backend, "update_env_thresholds"):
             self.backend.update_env_thresholds(
                 humidity_on=h_on, humidity_off=h_off,
@@ -296,7 +285,7 @@ class SettingsPage(QWidget):
             )
             QMessageBox.information(self, "设置",
                 f"环境阈值已更新:\n风扇开 {h_on}%RH / 关 {h_off}%RH\n"
-                f"温度 {t_off}~{t_on}℃")
+                f"风扇开 {t_on}℃ / 关 {t_off}℃")
         else:
             QMessageBox.warning(self, "设置", "后端不支持在线更新阈值")
 

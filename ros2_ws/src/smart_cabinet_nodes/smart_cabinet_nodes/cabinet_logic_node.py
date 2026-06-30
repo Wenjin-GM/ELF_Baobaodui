@@ -288,13 +288,15 @@ class CabinetLogicNode(Node):
         deadline = time.monotonic() + timeout
         results = []
 
-        nfc_result = self.call_nfc_action(timeout)
+        # NFC gets a capped slice so face recognition still has time
+        nfc_timeout = min(2.0, max(0.5, timeout * 0.25))
+        nfc_result = self.call_nfc_action(nfc_timeout)
         if nfc_result.get("success") and nfc_result.get("authorized"):
             nfc_result["method"] = "NFC"
             return nfc_result
         results.append(nfc_result)
 
-        remaining = max(0.1, deadline - time.monotonic())
+        remaining = max(0.5, deadline - time.monotonic())
         face_result = self.call_face_action(remaining)
         if face_result.get("success"):
             face_result["method"] = "人脸识别"
@@ -408,6 +410,7 @@ class CabinetLogicNode(Node):
                 self.add_event("inventory", "vision_node offline; using mock inventory result", "info")
                 self.apply_mock_inventory(reason)
                 self.set_state(self._prev_auth_state())
+                self.publish_ui_summary()
                 return
             self.add_event("盘点", "vision_node 未上线，无法盘点", "warning")
             self.set_state("ALARM_ACTIVE")
@@ -443,6 +446,7 @@ class CabinetLogicNode(Node):
         if result.success and result.is_normal:
             self.add_event("盘点", "盘点正常", "info")
             self.set_state(self._prev_auth_state())
+            self.publish_ui_summary()
         else:
             self.add_event("盘点", f"盘点异常: {result.message}", "warning")
             self.call_beep()
@@ -463,10 +467,15 @@ class CabinetLogicNode(Node):
             response.message = f"manual fan requires authenticated state, current={self.state}"
             self.add_event("ui", response.message, "warning")
             return response
-        self.call_set_fan(bool(request.on), request.reason or "manual")
-        self.add_event("ui", f"request_manual_fan received: {'on' if request.on else 'off'} ({request.reason or 'manual'})", "info")
+        on = bool(request.on)
+        self.call_set_fan(on, request.reason or "manual")
+        self.add_event("ui", f"request_manual_fan received: {'on' if on else 'off'} ({request.reason or 'manual'})", "info")
+        # immediately reflect expected state so UI button updates without waiting for actuator round-trip
+        self.fan_auto_on = False
+        self.last_actuator = dict(self.last_actuator, fan_on=on)
+        self.publish_ui_environment()
         response.accepted = True
-        response.message = f"manual fan {'on' if request.on else 'off'} requested"
+        response.message = f"manual fan {'on' if on else 'off'} requested"
         return response
 
     def request_temp_unlock(self, request, response):
@@ -504,9 +513,19 @@ class CabinetLogicNode(Node):
             Parameter("temp_on", Parameter.Type.DOUBLE, t_on),
             Parameter("temp_off", Parameter.Type.DOUBLE, t_off),
         ])
+        # persist so values survive restart
+        try:
+            path = DATA_DIR / "env_thresholds.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            data = {"humidity_on": h_on, "humidity_off": h_off, "temp_on": t_on, "temp_off": t_off}
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            self.get_logger().warning(f"failed to persist env_thresholds.json: {exc}")
         response.accepted = True
         response.message = f"thresholds updated H_on={h_on} H_off={h_off} T_on={t_on} T_off={t_off}"
         self.add_event("设置", response.message, "info")
+        self.publish_ui_environment()
+        self.publish_ui_summary()
         return response
 
     def publish_all_ui(self):

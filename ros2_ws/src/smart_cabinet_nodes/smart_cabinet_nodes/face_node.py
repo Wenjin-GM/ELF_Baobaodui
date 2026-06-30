@@ -7,7 +7,6 @@ from pathlib import Path
 
 import cv2
 import rclpy
-from cv_bridge import CvBridge
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
@@ -21,6 +20,8 @@ from .common import PROJECT_ROOT, ensure_project_imports
 class FaceNode(Node):
     def __init__(self):
         super().__init__("face_node")
+        self.get_logger().info("face_node init begin")
+
         self.declare_parameter("camera", "/dev/video21")
         self.declare_parameter("face_db", str(PROJECT_ROOT / "USB" / "face_auth" / "face_db"))
         self.declare_parameter("min_confidence", 0.45)
@@ -35,9 +36,26 @@ class FaceNode(Node):
         self.admin_names = set(
             n.strip() for n in str(self.get_parameter("admin_names").value).split(",") if n.strip()
         )
+
+        # ── Step 1: create preview publisher BEFORE anything blocking ──
+        self.preview_pub = self.create_publisher(Image, "/face/preview", 10)
+        self.get_logger().info("preview publisher created")
+
+        # ── Step 2: start camera capture — completely independent of FaceRecognizer ──
+        self.cap = None
+        self._latest_frame = None
+        self._frame_lock = threading.Lock()
+        self._capture_running = False
+        self._capture_thread = None
+        self._preview_timer = None
+        self.get_logger().info("camera capture start requested")
+        self._start_capture()
+
+        # ── Step 3: load FaceRecognizer AFTER camera is already publishing ──
         self.recognizer = None
         self.init_error = ""
         if not self.dry_run:
+            self.get_logger().info("loading FaceRecognizer ...")
             try:
                 ensure_project_imports()
                 core_path = PROJECT_ROOT / "USB" / "face_auth" / "face_recognition_core.py"
@@ -54,18 +72,7 @@ class FaceNode(Node):
         else:
             self.get_logger().info("dry_run enabled; face action uses mock_user_name")
 
-        # ---- camera ----
-        self.cap = None
-        self._latest_frame = None
-        self._frame_lock = threading.Lock()
-        self._capture_running = False
-        self._capture_thread = None
-        self._preview_timer = None
-        self._bridge = CvBridge()
-        self.preview_pub = self.create_publisher(Image, "/face/preview", 10)
-        self._start_capture()
-
-        # ---- auth action ----
+        # ── Step 4: auth action server ──
         self.action_server = ActionServer(
             self,
             AuthenticateFace,
@@ -74,6 +81,7 @@ class FaceNode(Node):
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
         )
+        self.get_logger().info("face action server ready")
 
     # ── camera ────────────────────────────────────────────────────────
 
@@ -84,7 +92,7 @@ class FaceNode(Node):
         device = str(self.get_parameter("camera").value)
         self.cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
         if not self.cap.isOpened():
-            self.get_logger().warn(f"camera {device} not available")
+            self.get_logger().warn(f"camera {device} not available, preview will be empty")
             self.cap.release()
             self.cap = None
             return
@@ -94,7 +102,7 @@ class FaceNode(Node):
         if self._preview_timer is None:
             fps = 1.0 / max(0.1, float(self.get_parameter("frame_interval_sec").value))
             self._preview_timer = self.create_timer(1.0 / fps, self._publish_preview)
-        self.get_logger().info(f"camera capture started on /face/preview")
+        self.get_logger().info(f"camera capture started on /face/preview at ~{fps:.1f} fps")
 
     def _stop_capture(self):
         """Stop capture thread, join, then release camera."""
@@ -117,15 +125,21 @@ class FaceNode(Node):
             time.sleep(interval)
 
     def _publish_preview(self):
-        """ROS timer callback — publishes latest frame, never touches camera."""
+        """ROS timer callback — manually construct sensor_msgs/Image, no CvBridge."""
         with self._frame_lock:
             frame = self._latest_frame.copy() if self._latest_frame is not None else None
         if frame is None:
             return
         try:
-            msg = self._bridge.cv2_to_imgmsg(frame, encoding="bgr8")
+            msg = Image()
             msg.header.stamp = self.get_clock().now().to_msg()
             msg.header.frame_id = "face_camera"
+            msg.height = frame.shape[0]
+            msg.width = frame.shape[1]
+            msg.encoding = "bgr8"
+            msg.is_bigendian = 0
+            msg.step = frame.shape[1] * 3
+            msg.data = frame.tobytes()
             self.preview_pub.publish(msg)
         except Exception as exc:
             self.get_logger().warn(f"preview publish error: {exc}")

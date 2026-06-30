@@ -188,9 +188,27 @@ def run_window(args):
     signal_timer.timeout.connect(lambda: None)
 
     if args.windowed:
+        window.resize(1024, 600)
         window.show()
     else:
+        # Fullscreen: show + delayed re-apply to work around WM races
         window.showFullScreen()
+        QTimer.singleShot(100, window.showFullScreen)
+        QTimer.singleShot(500, lambda: (
+            window.showFullScreen(),
+            window.raise_(),
+            window.activateWindow(),
+        ))
+        # Diagnostic: print geometry after event loop starts
+        QTimer.singleShot(1000, lambda: print(
+            f"[UI-DIAG] windowed={args.windowed} "
+            f"isFullScreen={window.isFullScreen()} "
+            f"screen={app.primaryScreen().geometry().getRect()} "
+            f"available={app.primaryScreen().availableGeometry().getRect()} "
+            f"window={window.geometry().getRect()} "
+            f"frame={window.frameGeometry().getRect()}"
+        ))
+
     try:
         return app.exec_()
     except KeyboardInterrupt:

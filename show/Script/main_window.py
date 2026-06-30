@@ -55,9 +55,10 @@ class MainWindow(QMainWindow):
         """初始化UI"""
         self.setWindowTitle("智能安全工具柜")
 
-        # 全屏显示
-        # self.showFullScreen()  # 可以根据需要启用全屏
-        self.resize(1024, 600)  # 默认10寸屏分辨率
+        # Size is set by ui_node at startup:
+        #   showFullScreen()  (default)
+        #   show() + resize() (--windowed)
+        # Do NOT hard-code a fixed size here — it fights with showFullScreen().
 
         # 中心容器
         central_widget = QWidget()
@@ -341,9 +342,17 @@ class MainWindow(QMainWindow):
             if _v and _v != "0":
                 print(f"[UI-DEBUG]   → _current_user(from auth)={self.state_machine._current_user}")
         else:
-            self.state_machine._current_user = None
-            if _v and _v != "0":
-                print(f"[UI-DEBUG]   → _current_user=NONE (cleared!)")
+            # Only clear user when state unambiguously shows no auth.
+            # During CHECKING_AFTER_CLOSE / CABINET_OPEN the cabinet still
+            # holds current_user; the summary may ship current_user={} when
+            # arriving before the cabinet has published the restored state.
+            if new_state in (SystemState.STANDBY, SystemState.OFFLINE, SystemState.AUTH_PENDING):
+                self.state_machine._current_user = None
+                if _v and _v != "0":
+                    print(f"[UI-DEBUG]   → _current_user=NONE (state={state_name})")
+            else:
+                if _v and _v != "0":
+                    print(f"[UI-DEBUG]   → _current_user preserved (state={state_name})")
 
         if _v and _v != "0":
             print(f"[UI-DEBUG]   current_state={self.state_machine.current_state.value} → {new_state.value}")

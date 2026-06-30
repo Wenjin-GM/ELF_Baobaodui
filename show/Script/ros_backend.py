@@ -33,13 +33,14 @@ class RosBackend(QObject):
         from sensor_msgs.msg import Image
         from std_msgs.msg import String
         from std_srvs.srv import Trigger
-        from smart_cabinet_interfaces.srv import RequestInventory, RequestManualFan, RequestOpen, RequestTempUnlock
+        from smart_cabinet_interfaces.srv import RequestInventory, RequestManualFan, RequestOpen, RequestTempUnlock, UpdateEnvThresholds
 
         self.rclpy = rclpy
         self.RequestInventory = RequestInventory
         self.RequestManualFan = RequestManualFan
         self.RequestOpen = RequestOpen
         self.RequestTempUnlock = RequestTempUnlock
+        self.UpdateEnvThresholds = UpdateEnvThresholds
         self.Trigger = Trigger
         self._owns_context = not rclpy.ok()
         if self._owns_context:
@@ -72,6 +73,7 @@ class RosBackend(QObject):
         self.fan_client = self.node.create_client(RequestManualFan, "/cabinet/request_manual_fan")
         self.temp_unlock_client = self.node.create_client(RequestTempUnlock, "/cabinet/request_temp_unlock")
         self.logout_client = self.node.create_client(Trigger, "/cabinet/logout")
+        self.env_thresholds_client = self.node.create_client(UpdateEnvThresholds, "/cabinet/update_env_thresholds")
 
     def start(self):
         if self._running:
@@ -118,17 +120,13 @@ class RosBackend(QObject):
         self.request_open_cabinet()
 
     def update_env_thresholds(self, humidity_on: float, humidity_off: float, temp_on: float, temp_off: float):
-        """Write thresholds to JSON file — cabinet_logic_node reads it on each env check."""
-        import json
-        from pathlib import Path
-        data = {
-            "humidity_on": float(humidity_on), "humidity_off": float(humidity_off),
-            "temp_on": float(temp_on), "temp_off": float(temp_off),
-        }
-        path = Path.home() / "smart_tool_cabinet" / "data" / "env_thresholds.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.node.get_logger().info(f"env thresholds written: {data}")
+        """Call /cabinet/update_env_thresholds service (single source of truth)."""
+        req = self.UpdateEnvThresholds.Request()
+        req.humidity_on = float(humidity_on)
+        req.humidity_off = float(humidity_off)
+        req.temp_on = float(temp_on)
+        req.temp_off = float(temp_off)
+        self._call_service(self.env_thresholds_client, req, "update_env_thresholds")
 
     def simulate_auth_failed(self):
         self.event_added.emit({"type": "auth", "content": "auth failed requested from UI", "level": "warning"})
