@@ -21,7 +21,7 @@ IDLE_HIGH_MIN_MS = 450.0
 PRESENT_THRESHOLD_MS = 200.0
 SHORT_INTERVAL_MS = (130.0, 285.0)
 LONG_INTERVAL_MS = (300.0, 560.0)
-FRAME_GAP_INTERVAL_MS = (620.0, 1100.0)
+FRAME_GAP_INTERVAL_MS = (580.0, 1300.0)
 INTERVAL_PRESENT_THRESHOLD_MS = 300.0
 MAX_INTERVAL_GROUP_MS = 1150.0
 NOISE_INTERVAL_MAX_MS = 50.0
@@ -157,7 +157,13 @@ def decode_pulses_from_edges(edges: List[Tuple[float, int]]) -> Tuple[Optional[L
 
 
 def _group_interval_frame(intervals: List[float]) -> Optional[Tuple[List[float], List[int]]]:
-    """Find one logical PB0 frame from possibly fragmented rising intervals."""
+    """Find one logical PB0 frame from possibly fragmented rising intervals.
+
+    Important: afternoon board validation showed the first logical interval is
+    the frame start, not slot1. A valid frame is:
+      start, slot1, slot2, slot3, slot4, gap
+    Therefore slot states are decoded from groups[1:5].
+    """
     token_count = 6  # start, slot1, slot2, slot3, slot4, gap
 
     def valid_token(index: int, value: float) -> bool:
@@ -226,11 +232,14 @@ def decode_rising_intervals_from_edges(edges: List[Tuple[float, int]]) -> Tuple[
 
     On the current ELF board, gpiochip3 line 7 has been observed to report
     mostly rising edges, while polling sees only microsecond-low separators.
-    The stable frame in that case is:
+    The rising-to-rising sequence observed in the afternoon validation is:
 
       start interval ~= 400ms
       slot intervals ~= 200ms(empty) or 400ms(present)
-      frame gap ~= 800ms
+      frame gap ~= 600..1300ms on the current board
+
+    Example for slot1+slot3 present:
+      400, 400, 200, 400, 200, 800 -> slots [1, 0, 1, 0]
     """
     rising_times = [timestamp for timestamp, level in edges if level == 1]
     if len(rising_times) < 7:
@@ -298,7 +307,13 @@ class Pb0PresenceReader:
 
 
 class Pb0PollingPresenceReader:
-    """Polling fallback for boards where edge events are unreliable."""
+    """Polling fallback for boards where edge events are unreliable.
+
+    On the current ELF gpiochip3 line 7 path, user-space polling observes very
+    short low separators and meaningful rising-to-rising intervals. Do not run
+    the low-pulse decoder first here; it can lock onto compressed low pulses
+    and falsely report all slots empty under full-system load.
+    """
 
     def __init__(self, chip: str = "gpiochip3", line: int = 7, interval_sec: float = 0.0):
         import gpiod
@@ -328,7 +343,7 @@ class Pb0PollingPresenceReader:
                 edges.append((time.monotonic(), level))
                 last_level = level
                 if len(edges) >= 7:
-                    slots, widths = decode_pulses_from_edges(edges)
+                    slots, widths = decode_rising_intervals_from_edges(edges)
                     if slots is not None:
                         return slots, widths
 

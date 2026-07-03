@@ -45,7 +45,7 @@ class CabinetLogicNode(Node):
         self.declare_parameter("simulate_missing_battery", True)
         self.declare_parameter("simulate_missing_vision", True)
         self.declare_parameter("record_runtime_data", True)
-        self.declare_parameter("exclusive_i2c4_auth_mode", True)
+        self.declare_parameter("exclusive_i2c4_auth_mode", False)
         self.declare_parameter("nfc_server_wait_sec", 3.0)
 
         self.state = "STANDBY"

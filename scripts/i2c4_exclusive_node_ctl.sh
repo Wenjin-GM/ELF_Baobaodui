@@ -113,9 +113,9 @@ start_nfc_node() {
   source "$ROS_WS/install/setup.bash"
   set -u
 
-  echo "[i2c4_ctl] starting nfc_node ..."
+  echo "[i2c4_ctl] starting nfc_node on i2c-7 ..."
   setsid ros2 run smart_cabinet_nodes nfc_node \
-    --ros-args -p dry_run:=false -p bus:=4 -p address:=36 -p poll_sec:=0.1 \
+    --ros-args -p dry_run:=false -p bus:=7 -p address:=36 -p poll_sec:=0.1 \
     >"$LOG_DIR/nfc_node.log" 2>&1 &
   echo "$!" >"$PID_DIR/nfc_node.pid"
   sleep 0.5
@@ -133,15 +133,8 @@ assert_opposite_stopped() {
 }
 
 check_dual_run() {
-  local env_pids nfc_pids
-  env_pids=$(node_pids env_node)
-  nfc_pids=$(node_pids nfc_node)
-  if [[ -n "$env_pids" && -n "$nfc_pids" ]]; then
-    echo "ERROR: env_node and nfc_node are both running" >&2
-    echo "  env pids: $env_pids" >&2
-    echo "  nfc pids: $nfc_pids" >&2
-    return 1
-  fi
+  # Historical name kept for compatibility. NFC is now on i2c-7 and SHT30 is
+  # on i2c-4, so env_node and nfc_node may run at the same time.
   return 0
 }
 
@@ -153,15 +146,9 @@ trap release_lock EXIT
 
 case "$CMD" in
   env)
-    stop_node nfc_node
-    sleep 0.3
-    assert_opposite_stopped nfc_node
     start_env_node
     ;;
   nfc)
-    stop_node env_node
-    sleep 0.3
-    assert_opposite_stopped env_node
     start_nfc_node
     ;;
   none)

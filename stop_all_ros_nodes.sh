@@ -47,6 +47,13 @@ pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/nfc_node' 2>/dev/null || 
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/actuator_node' 2>/dev/null || true
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/env_node' 2>/dev/null || true
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/battery_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes ui_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes cabinet_logic_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes face_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes nfc_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes actuator_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes env_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes battery_node' 2>/dev/null || true
 
 # Keep the active-high buzzer quiet after actuator shutdown.
 if command -v gpioset >/dev/null 2>&1; then

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import os
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
@@ -16,10 +17,15 @@ from .common import ensure_project_imports, load_authorized_cards, role_for_card
 class NfcNode(Node):
     def __init__(self):
         super().__init__("nfc_node")
-        self.declare_parameter("bus", 4)
+        self.lock_fd = None
+        self.acquire_process_lock()
+        self.declare_parameter("bus", 7)
         self.declare_parameter("address", 0x24)
         self.declare_parameter("poll_sec", 0.1)
         self.declare_parameter("dry_run", False)
+        self.declare_parameter("debug", False)
+        self.declare_parameter("open_retries", 3)
+        self.declare_parameter("open_retry_delay_sec", 0.25)
         self.declare_parameter("authorized_cards_path", "")
 
         self.dry_run = bool(self.get_parameter("dry_run").value)
@@ -49,6 +55,30 @@ class NfcNode(Node):
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
         )
+
+    def acquire_process_lock(self) -> None:
+        """Prevent two nfc_node processes from contending for one PN532 bus."""
+        if os.name != "posix":
+            return
+        try:
+            import fcntl
+
+            fd = os.open("/tmp/smart_cabinet_nfc_node.lock", os.O_RDWR | os.O_CREAT, 0o644)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                os.close(fd)
+                self.get_logger().error(
+                    "another nfc_node process is already running; refusing to start a second NFC owner"
+                )
+                raise RuntimeError("nfc_node already running") from exc
+            os.ftruncate(fd, 0)
+            os.write(fd, str(os.getpid()).encode("ascii"))
+            self.lock_fd = fd
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            self.get_logger().warning(f"could not create nfc_node process lock: {exc}")
 
     def goal_callback(self, goal_request):
         if goal_request.timeout_sec <= 0:
@@ -133,22 +163,40 @@ class NfcNode(Node):
             return True
         if self.driver_cls is None:
             return False
-        self.close_reader()
-        try:
-            self.nfc = self.driver_cls(bus=self.bus, address=self.address)
-            ok = bool(self.nfc.begin())
-        except Exception as exc:
-            self.last_error = f"PN532 open failed: {exc}"
-            self.get_logger().error(self.last_error)
+        retries = max(1, int(self.get_parameter("open_retries").value))
+        retry_delay = max(0.0, float(self.get_parameter("open_retry_delay_sec").value))
+        debug = bool(self.get_parameter("debug").value)
+
+        for attempt in range(1, retries + 1):
             self.close_reader()
-            return False
-        if ok:
-            self.get_logger().info(f"PN532 opened on i2c-{self.bus}, addr=0x{self.address:02X}")
-        else:
-            self.last_error = f"PN532 open failed on i2c-{self.bus}, addr=0x{self.address:02X}"
-            self.get_logger().error(self.last_error)
+            try:
+                self.nfc = self.driver_cls(bus=self.bus, address=self.address, debug=debug)
+                ok = bool(self.nfc.begin())
+            except Exception as exc:
+                self.last_error = f"PN532 open failed: {exc}"
+                self.get_logger().warning(
+                    f"{self.last_error} (attempt {attempt}/{retries})"
+                )
+                self.close_reader()
+                ok = False
+
+            if ok:
+                self.last_error = ""
+                self.get_logger().info(
+                    f"PN532 opened on i2c-{self.bus}, addr=0x{self.address:02X}"
+                )
+                return True
+
             self.close_reader()
-        return ok
+            if attempt < retries:
+                self.get_logger().warning(
+                    f"PN532 open retry {attempt}/{retries} failed; retrying in {retry_delay:.2f}s"
+                )
+                time.sleep(retry_delay)
+
+        self.last_error = f"PN532 open failed on i2c-{self.bus}, addr=0x{self.address:02X}"
+        self.get_logger().error(self.last_error)
+        return False
 
     def close_reader(self):
         if self.nfc is not None:
@@ -187,19 +235,28 @@ class NfcNode(Node):
         if self.action_server is not None:
             self.action_server.destroy()
         self.close_reader()
+        if self.lock_fd is not None:
+            try:
+                os.close(self.lock_fd)
+            finally:
+                self.lock_fd = None
         super().destroy_node()
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = NfcNode()
+    node = None
     executor = MultiThreadedExecutor()
     try:
+        node = NfcNode()
         rclpy.spin(node, executor=executor)
+    except RuntimeError as exc:
+        print(f"nfc_node startup failed: {exc}")
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        node.destroy_node()
+        if node is not None:
+            node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 

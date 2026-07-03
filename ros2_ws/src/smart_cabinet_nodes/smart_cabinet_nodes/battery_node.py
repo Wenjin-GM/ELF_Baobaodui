@@ -6,6 +6,7 @@ Publishes /battery/state (std_msgs/String JSON).
 
 from __future__ import annotations
 
+import threading
 import time
 
 import rclpy
@@ -22,11 +23,11 @@ class BatteryNode(Node):
         super().__init__("battery_node")
         self.declare_parameter("chip", "gpiochip3")
         self.declare_parameter("line", 7)
-        self.declare_parameter("period_sec", 1.0)
+        self.declare_parameter("period_sec", 3.0)
         self.declare_parameter("confirm_frames", 2)
-        self.declare_parameter("timeout_sec", 8.0)
-        self.declare_parameter("poll_mode", False)
-        self.declare_parameter("poll_interval_sec", 0.01)
+        self.declare_parameter("timeout_sec", 25.0)
+        self.declare_parameter("poll_mode", True)
+        self.declare_parameter("poll_interval_sec", 0.0)
         self.declare_parameter("dry_run", False)
 
         self.pub = self.create_publisher(String, "/battery/state", 10)
@@ -34,7 +35,10 @@ class BatteryNode(Node):
         self.timer = self.create_timer(period, self._tick)
 
         self._reader = None
-        self._last_slots = None
+        self._payload_lock = threading.Lock()
+        self._payload = build_payload(None, [], 0, 0)
+        self._stop_event = threading.Event()
+        self._worker = None
         if not bool(self.get_parameter("dry_run").value):
             try:
                 chip = str(self.get_parameter("chip").value)
@@ -49,12 +53,36 @@ class BatteryNode(Node):
                 self.get_logger().info(
                     f"PB0 reader ready on {chip} line {line} ({mode})"
                 )
+                self._worker = threading.Thread(target=self._read_loop, daemon=True)
+                self._worker.start()
             except Exception as exc:
                 self.get_logger().error(f"PB0 reader init failed: {exc}")
+        else:
+            self.get_logger().warning("battery_node dry_run=true; publishing offline payload")
 
     def _tick(self):
-        payload = self._read_once()
+        with self._payload_lock:
+            payload = dict(self._payload)
         self.pub.publish(String(data=json_text(payload)))
+
+    def _read_loop(self):
+        self.get_logger().info("PB0 reader loop started")
+        while not self._stop_event.is_set():
+            try:
+                payload = self._read_once()
+            except Exception as exc:
+                self.get_logger().warning(f"PB0 reader loop error: {exc}")
+                payload = build_payload(None, [], 0, 0)
+            with self._payload_lock:
+                self._payload = payload
+            if payload.get("status_valid"):
+                self.get_logger().info(
+                    f"PB0 read ok: slots={payload.get('slots')} "
+                    f"mask={payload.get('presence_mask')} "
+                    f"widths={payload.get('pulse_widths_ms')}"
+                )
+            else:
+                self.get_logger().warning("PB0 read produced offline payload")
 
     def _read_once(self):
         if self._reader is None:
@@ -86,13 +114,15 @@ class BatteryNode(Node):
                 break
 
         if stable >= confirm:
-            self._last_slots = last_slots
             return build_payload(last_slots, last_widths, stable, total)
         return build_payload(None, last_widths, stable, total)
 
     def destroy_node(self):
+        self._stop_event.set()
         if self._reader:
             self._reader.close()
+        if self._worker and self._worker.is_alive():
+            self._worker.join(timeout=1.0)
         super().destroy_node()
 
 

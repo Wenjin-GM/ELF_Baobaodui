@@ -22,6 +22,7 @@ setup(
             "env_node = smart_cabinet_nodes.env_node:main",
             "actuator_node = smart_cabinet_nodes.actuator_node:main",
             "nfc_node = smart_cabinet_nodes.nfc_node:main",
+            "nfc_action_client = smart_cabinet_nodes.nfc_action_client:main",
             "face_node = smart_cabinet_nodes.face_node:main",
             "cabinet_logic_node = smart_cabinet_nodes.cabinet_logic_node:main",
             "ui_node = smart_cabinet_nodes.ui_node:main",
