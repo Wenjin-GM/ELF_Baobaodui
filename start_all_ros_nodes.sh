@@ -73,13 +73,11 @@ start_node() {
 
 cd "$ROS_WS"
 
-start_node env_node ros2 run smart_cabinet_nodes env_node --ros-args -p period_sec:=1.0 -p dry_run:="$ENV_DRY_RUN"
+# env_node started via unified i2c4 exclusive control (stops nfc_node first)
+bash "$PROJECT_ROOT/scripts/i2c4_exclusive_node_ctl.sh" env
 start_node actuator_node ros2 run smart_cabinet_nodes actuator_node --ros-args -p dry_run:="$ACTUATOR_DRY_RUN"
-if [[ -n "$NFC_MOCK_UID" ]]; then
-  start_node nfc_node ros2 run smart_cabinet_nodes nfc_node --ros-args -p dry_run:="$NFC_DRY_RUN" -p mock_uid:="$NFC_MOCK_UID"
-else
-  start_node nfc_node ros2 run smart_cabinet_nodes nfc_node --ros-args -p dry_run:="$NFC_DRY_RUN"
-fi
+# nfc_node is now launched on demand during AUTH_PENDING via i2c4_exclusive_node_ctl.sh.
+# env_node and nfc_node must never run together on i2c-4.
 start_node face_node ros2 run smart_cabinet_nodes face_node --ros-args -p dry_run:="$FACE_DRY_RUN"
 start_node cabinet_logic_node ros2 run smart_cabinet_nodes cabinet_logic_node
 

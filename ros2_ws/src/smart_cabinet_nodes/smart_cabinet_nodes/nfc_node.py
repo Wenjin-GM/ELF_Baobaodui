@@ -16,7 +16,7 @@ from .common import ensure_project_imports, load_authorized_cards, role_for_card
 class NfcNode(Node):
     def __init__(self):
         super().__init__("nfc_node")
-        self.declare_parameter("bus", 7)
+        self.declare_parameter("bus", 4)
         self.declare_parameter("address", 0x24)
         self.declare_parameter("poll_sec", 0.1)
         self.declare_parameter("dry_run", False)

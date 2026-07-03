@@ -83,10 +83,10 @@ Open these files for deeper context:
 
 ## 4. Core Knowledge
 
-Hardware mapping currently used:
+Hardware mapping currently used (I2C4 一主多从, 2026-07-03):
 
-- SHT30: `SDA.1/SCL.1`, `/dev/i2c-4`, address `0x44`.
-- PN532: `SDA.0/SCL.0`, expected `/dev/i2c-7`, address `0x24`.
+- SHT30: `/dev/i2c-4`, address `0x44`.
+- PN532: `/dev/i2c-4`, address `0x24`.
 - Fan relay: `GPIO.28`, Linux `gpiochip3 line 9`, active-low relay, controls fan.
 - Door lock relay: `GPIO.25`, Linux `gpiochip3 line 3`, active-low relay, controls door lock. Single pulse must be `<= 0.5s`.
 - Buzzer: `GPIO.23`, Linux `gpiochip3 line 4`, active-high. `1` sounds, `0` silent.

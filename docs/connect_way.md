@@ -29,10 +29,10 @@ ELF 2 SDA.1  -> SHT30 SDA
 ELF 2 SCL.1  -> SHT30 SCL
 ```
 
-按项目资料和官方引脚复用表，`SDA.1/SCL.1` 对应 `I2C4`：
+按项目资料和官方引脚复用表，`SDA.1/SCL.1` 对应 `I2C4`。**2026-07-03 采用 I2C4 一主多从**：PN532 0x24 + SHT30 0x44 共线。
 
 ```python
-I2C_BUS_SHT30 = 4
+I2C_BUS_SHT30 = 4   # I2C4 一主多从
 I2C_ADDR_SHT30 = 0x44
 ```
 
@@ -42,7 +42,7 @@ I2C_ADDR_SHT30 = 0x44
 sudo i2cdetect -y 4
 ```
 
-期望能看到 `0x44`。
+期望同时看到 `0x24` (PN532) 和 `0x44` (SHT30)。
 
 ### PN532 NFC 模块
 
@@ -60,17 +60,15 @@ ELF 2 SCL.0  -> PN532 SCL
 | `NFC_I2C测试指南.md` 和部分 PN532 测试脚本 | `I2C4` |
 | `README.md`、`MAIN_README.md`、`env_nfc_relay_control.py` 早期说明 | `I2C7` |
 
-本次硬件已改为 `SDA.0/SCL.0`，总表中标注为 `I2C5_I2C7_SDA/SCL`。结合旧项目资料中 PN532 曾按 `I2C7` 调通的记录，软件侧优先按 `I2C7` 验证；若板端扫描结果与此不一致，再检查 `I2C5`。
+本次硬件接线：`SDA.0/SCL.0`，总表中标注为 `I2C5_I2C7_SDA/SCL`。**2026-07-03 采用 I2C4 一主多从**：PN532 0x24 与 SHT30 0x44 均挂在 `/dev/i2c-4`。
 
 建议验证：
 
 ```bash
-sudo i2cdetect -y 7
-sudo i2cdetect -y 5
 sudo i2cdetect -y 4
 ```
 
-PN532 默认 I2C 地址为 `0x24`。确认在哪条总线上扫到 `0x24` 后，再同步修改代码中的 NFC 总线常量。
+PN532 默认 I2C 地址为 `0x24`。SHT30 为 `0x44`。同一张 i2cdetect 表中应同时出现两个地址。
 
 ## 三、GPIO 与 gpiod 映射
 
@@ -100,12 +98,10 @@ GPIO3_B1 -> gpiochip3 line 9
 确认硬件扫描结果后，`main.py` 顶部常量建议调整为：
 
 ```python
-# I2C
+# I2C — I2C4 一主多从: PN532 0x24 + SHT30 0x44 共线
 I2C_BUS_SHT30 = 4
 I2C_ADDR_SHT30 = 0x44
-
-# PN532: 最新接线为 SDA.0/SCL.0，标注为 I2C5_I2C7，优先按 I2C7 验证
-I2C_BUS_NFC = 7
+I2C_BUS_NFC = 4
 I2C_ADDR_NFC = 0x24
 
 # GPIO
@@ -199,7 +195,7 @@ sudo gpioset gpiochip3 4=0
 
 ## 七、待确认项
 
-1. PN532 在 `SDA.0/SCL.0` 接线下最终出现于 `/dev/i2c-7` 还是 `/dev/i2c-5`。
+1. PN532 与 SHT30 在 I2C4 一主多从下是否同时稳定出现于 `/dev/i2c-4`（`0x24` + `0x44`）。
 2. 蜂鸣器已确认高电平触发：`gpiochip3 line 4 = 1` 响，`0` 静音。
 3. 二号、三号继电器是否均为低电平有效；若继电器板型号变化，需要实测确认。
 4. 电池充电模块尚未连接，8 路充电继电器 GPIO 暂不分配。

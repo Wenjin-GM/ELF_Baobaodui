@@ -98,8 +98,8 @@ sudo kill -15 <PID>
 ### 硬件配置（main.py 顶部）
 ```python
 # I2C总线
-I2C_BUS_NFC = 7        # NFC读卡器
-I2C_BUS_SHT30 = 4      # 温湿度传感器
+I2C_BUS_NFC = 4        # NFC读卡器 (I2C4 一主多从: PN532 0x24 + SHT30 0x44)
+I2C_BUS_SHT30 = 4      # 温湿度传感器 (I2C4 一主多从)
 
 # GPIO引脚
 GPIO_CHIP = "gpiochip3"

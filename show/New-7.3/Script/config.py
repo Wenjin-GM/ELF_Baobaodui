@@ -85,9 +85,9 @@ AUTH_CONFIG = {
 # ========== 硬件接口配置 ==========
 HARDWARE_CONFIG = {
     # I2C
-    "sht30_bus": 4,             # SHT30 I2C 总线
+    "sht30_bus": 4,             # SHT30 I2C 总线 (I2C4 一主多从: PN532 0x24 + SHT30 0x44)
     "sht30_addr": 0x44,         # SHT30 I2C 地址
-    "pn532_bus": 7,             # PN532 I2C 总线
+    "pn532_bus": 4,             # PN532 I2C 总线 (I2C4 一主多从)
     "pn532_addr": 0x24,         # PN532 I2C 地址
 
     # GPIO (需要根据实际板卡配置)

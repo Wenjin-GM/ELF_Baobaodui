@@ -84,7 +84,7 @@ workspace/
 
 ```python
 I2C_BUS_SHT30 = 4
-I2C_BUS_NFC = 7
+I2C_BUS_NFC = 4
 GPIO_LOCK_LINE = 3
 GPIO_FAN_LINE = 9
 GPIO_BUZZER_LINE = 4

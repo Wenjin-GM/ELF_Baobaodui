@@ -45,7 +45,7 @@ echo
 echo "== Configure udev permissions =="
 cat > "$UDEV_RULE" <<'EOF'
 # Smart tool cabinet hardware permissions for ROS2/Python nodes.
-# I2C: PN532 on /dev/i2c-7, SHT30 on /dev/i2c-4
+# I2C: PN532 0x24 and SHT30 0x44 on /dev/i2c-4 (一主多从)
 SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
 
 # GPIO: fan/lock/buzzer through libgpiod

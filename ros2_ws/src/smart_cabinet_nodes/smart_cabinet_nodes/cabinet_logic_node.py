@@ -26,7 +26,7 @@ from smart_cabinet_interfaces.srv import (
     SetFan,
 )
 
-from .common import DATA_DIR, ensure_data_dirs, json_text, now_iso, write_json_record
+from .common import DATA_DIR, PROJECT_ROOT, ensure_data_dirs, json_text, now_iso, write_json_record
 
 
 class CabinetLogicNode(Node):
@@ -45,8 +45,11 @@ class CabinetLogicNode(Node):
         self.declare_parameter("simulate_missing_battery", True)
         self.declare_parameter("simulate_missing_vision", True)
         self.declare_parameter("record_runtime_data", True)
+        self.declare_parameter("exclusive_i2c4_auth_mode", True)
+        self.declare_parameter("nfc_server_wait_sec", 3.0)
 
         self.state = "STANDBY"
+        self.auth_in_progress = False
         self.current_user: Dict[str, Any] | None = None
         self.last_env: Dict[str, Any] = {}
         self.last_battery: Dict[str, Any] = {}
@@ -224,6 +227,27 @@ class CabinetLogicNode(Node):
         req.reason = reason
         self.set_fan_client.call_async(req)
 
+    def _switch_i2c4_mode(self, mode: str) -> bool:
+        """Call i2c4_exclusive_node_ctl.sh to toggle between env/nfc.
+        Returns True on success, False on failure."""
+        script = str(PROJECT_ROOT / "scripts" / "i2c4_exclusive_node_ctl.sh")
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["bash", script, mode],
+                capture_output=True, text=True, timeout=15.0,
+            )
+            if result.returncode != 0:
+                self.get_logger().error(
+                    f"i2c4 switch to {mode} failed (rc={result.returncode}): {result.stderr.strip()}"
+                )
+                return False
+            self.get_logger().info(f"i2c4 switched to {mode} (took {result.stdout.split()[-1] if result.stdout else '?'}s)")
+            return True
+        except Exception as exc:
+            self.get_logger().error(f"i2c4 switch to {mode} exception: {exc}")
+            return False
+
     def request_open(self, request, response):
         self.add_event("ui", f"request_open received, timeout={float(request.timeout_sec):.1f}s", "info")
         if self.state in {"USER_AUTHED", "ADMIN_AUTHED"}:
@@ -236,26 +260,47 @@ class CabinetLogicNode(Node):
             response.message = f"request_open refused in state {self.state}"
             self.add_event("ui", response.message, "warning")
             return response
+        if self.auth_in_progress:
+            response.accepted = False
+            response.message = "authentication already in progress"
+            self.add_event("ui", response.message, "warning")
+            return response
         timeout = float(request.timeout_sec) if request.timeout_sec > 0 else float(self.get_parameter("auth_timeout_sec").value)
-        self.set_state("AUTH_PENDING")
+        self.auth_in_progress = True
+        # AUTH_PENDING is set inside auth_and_open_worker AFTER the i2c4 switch
         response.accepted = True
         response.message = "authentication started"
         self.run_soon(self.auth_and_open_worker, timeout)
         return response
 
     def auth_and_open_worker(self, timeout: float):
-        auth_result = self.try_auth(timeout)
-        if not auth_result.get("success"):
-            if self.state != "AUTH_PENDING":
-                return
-            self.current_user = None
-            self.last_auth = auth_result
-            self.publish_auth(auth_result)
-            self.add_event("认证", auth_result.get("message", "认证失败"), "warning")
-            self.set_state("STANDBY")
-            return
+        switched_to_nfc = False
+        exclusive = bool(self.get_parameter("exclusive_i2c4_auth_mode").value)
+        try:
+            if exclusive and self.state == "STANDBY":
+                if not self._switch_i2c4_mode("nfc"):
+                    self.add_event("认证", "I2C4 切换到 NFC 失败，认证取消", "error")
+                    self._switch_i2c4_mode("env")  # best-effort restore
+                    return
+                switched_to_nfc = True
 
-        self.apply_auth_success(auth_result, "auth_success")
+            self.set_state("AUTH_PENDING")
+            auth_result = self.try_auth(timeout)
+            if not auth_result.get("success"):
+                if self.state != "AUTH_PENDING":
+                    return
+                self.current_user = None
+                self.last_auth = auth_result
+                self.publish_auth(auth_result)
+                self.add_event("认证", auth_result.get("message", "认证失败"), "warning")
+                self.set_state("STANDBY")
+                return
+
+            self.apply_auth_success(auth_result, "auth_success")
+        finally:
+            self.auth_in_progress = False
+            if switched_to_nfc:
+                self._switch_i2c4_mode("env")
 
     def apply_auth_success(self, auth_result: Dict[str, Any], reason: str):
         if self.state in {"USER_AUTHED", "ADMIN_AUTHED"} and self.current_user:
@@ -311,7 +356,8 @@ class CabinetLogicNode(Node):
         }
 
     def call_nfc_action(self, timeout: float) -> Dict[str, Any]:
-        if not self.nfc_client.wait_for_server(timeout_sec=0.2):
+        nfc_wait = float(self.get_parameter("nfc_server_wait_sec").value)
+        if not self.nfc_client.wait_for_server(timeout_sec=nfc_wait):
             return {"success": False, "message": "NFC action server not ready"}
         goal = ReadNfcCard.Goal()
         goal.timeout_sec = float(timeout)

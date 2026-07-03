@@ -1,49 +1,133 @@
-基于 ROS2 的工作体系框架
+基于 ROS2 的智能工具柜工作体系大纲（当前有效版）
 
-一、总体设计原则
+更新时间：2026-07-03
+
+本文档是后续 ROS 节点修改、联调、审查的总大纲、约束和指导。后续修改应优先对照本文档判断是否偏离架构边界。
+
+
+一、当前项目状态
+
+1. 已实机验证或基本可用
+
+1. env_node：
+   - SHT30 温湿度传感器已验证。
+   - 当前接线：SHT30 独占 I2C4。
+   - 地址：0x44。
+   - 发布：/env/state。
+
+2. actuator_node：
+   - 风扇、门锁、蜂鸣器等执行器由 actuator_node 管理。
+   - 高风险动作必须通过 service/action，不允许 UI 或业务节点直接操作 GPIO。
+
+3. face_node：
+   - 人脸认证 action 已可用。
+   - /face/preview 已修复，UI 认证页可订阅预览画面。
+   - 当前柜外摄像头按实机配置使用，例如 /dev/video21。
+
+4. battery_node：
+   - 已不再是占位节点。
+   - 当前通过 STM32 解码电池盒，再由 ELF 读取 STM32 PB0 单线输出。
+   - 当前 ELF 端有效 GPIO：gpiochip3 line 7。
+   - 推荐读取方式：poll mode。
+   - 发布：/battery/state。
+   - 目前只提供四个槽位是否有电池，不提供电量百分比。
+
+5. cabinet_logic_node：
+   - 已承担主控逻辑、状态机、UI 聚合发布。
+   - 已订阅 /env/state、/battery/state、/actuator/state。
+   - 已发布 /ui/summary、/ui/environment、/ui/battery 等 UI 聚合 topic。
+
+6. ui_node：
+   - ROS wrapper 已可通过 SMART_CABINET_SHOW_DIR 或 --show-dir 指向不同 UI 目录。
+   - 当前准备试用 workspace/show/New-7.3/Script 作为新 UI。
+
+
+2. 当前未稳定可用或待接入
+
+1. nfc_node：
+   - PN532 当前 SPI 方案尚未打通。
+   - 不能作为“当前默认可用认证方式”写入启动脚本。
+   - 后续打通后再恢复 /auth/read_nfc_card action。
+
+2. vision_node：
+   - 柜内摄像头 /dev/video11 和 YOLO 模型已做过独立测试。
+   - ROS 化的 RunInventory action 仍是后续集成任务。
+   - 当前主流程中仍可保留 mock 或 missing vision 保护。
+
+3. door_node：
+   - 门磁/柜门状态检测未正式接入。
+   - 柜门关闭后的自动盘点流程可先由 UI 按钮或主控逻辑模拟触发。
+
+
+二、总体设计原则
+
 1. 高风险执行动作不使用纯 topic：
-   - 门锁、风扇、蜂鸣器等执行器用 service/action。
-   - 调用方需要得到成功/失败结果。
+   - 门锁、风扇、蜂鸣器、继电器等执行器必须由 actuator_node 统一控制。
+   - 调用方通过 service/action 获得成功或失败结果。
    - 门锁单次通电时间限制必须写在 actuator_node 内部，不完全信任外部参数。
 
-2. 高算力任务采用触发式：
-   - NFC、人脸识别只在认证窗口内工作。
+2. UI 不直接操作硬件：
+   - UI 只显示 cabinet_logic_node 汇总后的 /ui/* 数据。
+   - UI 点击只调用 /cabinet/* service。
+   - UI 不直接订阅 /env/state、/battery/state、/actuator/state 等底层 topic。
+
+3. 高算力任务采用触发式：
+   - 人脸识别只在认证窗口内进行识别，但 /face/preview 可以作为 UI 预览持续发布。
    - 柜内视觉盘点只在“柜门关闭后”或“用户点击立即盘点”时触发。
-   - 柜内摄像头图像不高频发布原图，只在每次触发盘点时发布一次图像，并保存一份本地图片。
+   - 柜内摄像头不高频发布原图，每次盘点只保存并发布一次必要图像。
+
+4. cabinet_logic_node 是业务事实来源：
+   - 系统状态、当前用户、报警状态、环境控制、盘点结果、充电显示都由 cabinet_logic_node 汇总。
+   - UI 的 StateMachine 只能跟随 /ui/summary，不应另起一套业务判断。
+
+5. 当前默认启动策略必须反映真实硬件状态：
+   - SHT30/env_node 默认启动。
+   - battery_node 默认启动。
+   - face_node 默认启动。
+   - PN532/nfc_node 在 SPI 未打通前默认不启动。
+   - vision_node 在 ROS action 未完成前默认不作为真实盘点依赖。
 
 
-二、节点划分
+三、节点划分
 
 1. ui_node（显示屏节点）
 
-类型：发布和订阅节点，必要时调用 service/action。
+类型：PyQt UI + ROS backend。
 
 职责：
 1. 显示系统状态、当前用户、温湿度、工具盘点结果、充电状态、事件日志。
-2. 接收用户点击或触摸操作，例如：
+2. 接收触摸操作：
    - 申请开柜
    - 立即盘点
    - 手动开/关风扇
    - 临时开锁
-   - 进入/退出维护模式
+   - 进入维护模式
 3. 向 cabinet_logic_node 发送用户请求。
-4. 不直接订阅传感器、电池盒、执行器等底层原始 topic，避免 UI 重复承担业务判断。
-5. 只订阅 cabinet_logic_node 汇总后的、面向界面显示的数据。
+4. 只订阅 /ui/* 和 /face/preview。
 
 订阅：
-1. /ui/summary：总览页聚合状态，包括系统状态、当前用户、环境摘要、工具摘要、充电摘要、报警摘要。
-2. /ui/environment：环境页聚合状态，包括温度、湿度、风扇状态、报警状态、阈值、趋势提示。
-3. /ui/inventory：工具页聚合状态，包括五区盘点结果、缺失/错放列表、最近盘点时间。
-4. /ui/inventory_image：最近一次盘点图像或压缩图像。
-5. /ui/battery：充电页聚合状态，包括电池盒状态、四个电池位状态、充电开关状态、模块在线状态。
-6. /ui/auth：认证页聚合状态，包括 NFC/人脸认证进度、认证结果、当前用户。
-7. /ui/events：系统事件日志。
+1. /ui/summary
+2. /ui/environment
+3. /ui/inventory
+4. /ui/inventory_image
+5. /ui/battery
+6. /ui/auth
+7. /ui/events
+8. /face/preview
 
 调用：
-1. /cabinet/request_open：用户点击“申请开柜”。
-2. /cabinet/request_inventory：用户点击“立即盘点”。
-3. /cabinet/request_manual_fan：管理员手动开/关风扇。
-4. /cabinet/request_temp_unlock：管理员临时开锁。
+1. /cabinet/request_open
+2. /cabinet/request_inventory
+3. /cabinet/request_manual_fan
+4. /cabinet/request_temp_unlock
+5. /cabinet/logout
+6. /cabinet/update_env_thresholds
+
+当前 UI 约束：
+1. New-7.3 UI 的 RosBackend 必须保持与页面层所需 Qt signal 兼容。
+2. /ui/environment 中的 humidity_on、humidity_off、temp_on、temp_off 必须继续传给环境页。
+3. 管理员登录后必须显示“设置”页。
+4. 认证页必须保持 /face/preview 摄像头预览可用。
 
 
 2. cabinet_logic_node（系统主控逻辑节点）
@@ -57,98 +141,111 @@
    - USER_AUTHED：普通用户已认证
    - ADMIN_AUTHED：管理员已认证
    - CABINET_OPEN：柜门打开
-   - CHECKING_AFTER_CLOSE：关门后盘点中
+   - CHECKING_AFTER_CLOSE：盘点中
    - ALARM_ACTIVE：报警状态
    - MAINTENANCE：维护模式
    - OFFLINE：关键硬件离线
 2. 处理认证流程：
-   - 收到“申请开柜”后，同时启动 NFC 认证和人脸认证。
-   - 认证窗口建议为 5s。
-   - NFC 或人脸任一通过即可开柜。
-   - 超时则认证失败，回到待机或认证页提示失败。
+   - 当前默认以 face_node 为稳定认证方式。
+   - nfc_node 在 PN532 SPI 未打通前不应作为默认依赖。
+   - 后续 PN532 打通后，可恢复 NFC + face 任一通过即可开柜。
 3. 处理开锁流程：
-   - 认证通过后调用 actuator_node 的开锁 service/action。
+   - 认证通过后调用 actuator_node 的开锁服务。
    - 开锁成功后进入 CABINET_OPEN。
 4. 处理盘点流程：
-   - 柜门关闭后自动触发视觉盘点。
-   - 用户点击“立即盘点”时手动触发视觉盘点。
-   - 盘点正常则回到 STANDBY 或已认证状态。
-   - 发现缺失、错放等异常则进入 ALARM_ACTIVE，并触发蜂鸣器。
+   - 用户点击“立即盘点”时调用 vision_node 或 mock/占位逻辑。
+   - 若 vision_node 未上线，应记录事件并保持原认证态，不应把用户强制退回未认证态。
 5. 处理环境控制：
    - 订阅 /env/state。
-   - 温湿度超限时请求 actuator_node 开风扇。
-   - 环境恢复后请求 actuator_node 关风扇。
+   - 根据 humidity_on、humidity_off、temp_on、temp_off 请求 actuator_node 开/关风扇。
+   - 设置页修改阈值后应立即发布 /ui/environment 和 /ui/summary。
 6. 汇总面向 UI 的显示状态：
-   - 将 /env/state、/battery/state、/actuator/state、/vision/inventory_result、/auth/result 等底层数据整理成 /ui/* topic。
-   - UI 只关心“该显示什么”，不直接判断底层传感器是否异常、风扇是否该开、是否该报警。
-7. 统一发布系统事件：
-   - 认证成功/失败
-   - 开柜/关柜
-   - 盘点开始/完成
-   - 工具缺失/错放
-   - 温湿度超限
-   - 执行器动作结果
+   - 将 /env/state、/battery/state、/actuator/state、/vision/inventory_result、/auth/result 等转换为 /ui/*。
+7. 统一发布系统事件。
 
 发布：
-1. /cabinet/state：系统状态。
-2. /cabinet/events：事件日志。
-3. /auth/result：认证结果汇总，主要供记录和调试，也可被 cabinet_logic_node 内部转换为 /ui/auth。
-4. /ui/summary：总览页聚合状态。
-5. /ui/environment：环境页聚合状态。
-6. /ui/inventory：工具页聚合状态。
-7. /ui/inventory_image：最近一次盘点图像或压缩图像。
-8. /ui/battery：充电页聚合状态。
-9. /ui/auth：认证页聚合状态。
-10. /ui/events：面向 UI 的事件日志。
+1. /cabinet/state
+2. /cabinet/events
+3. /auth/result
+4. /ui/summary
+5. /ui/environment
+6. /ui/inventory
+7. /ui/inventory_image
+8. /ui/battery
+9. /ui/auth
+10. /ui/events
 
 订阅：
-1. /env/state：温湿度数据。
-2. /battery/state：电池盒状态。
-3. /actuator/state：执行器状态。
-4. /vision/inventory_result：柜内视觉盘点结果。
-5. /vision/inventory_image：最近一次盘点图像或压缩图像。
-6. 后续如增加门磁，可订阅 /door/state。
+1. /env/state
+2. /battery/state
+3. /actuator/state
+4. /vision/inventory_result
+5. /vision/inventory_image
+6. 后续可增加 /door/state
 
 提供服务：
 1. /cabinet/request_open
 2. /cabinet/request_inventory
 3. /cabinet/request_manual_fan
 4. /cabinet/request_temp_unlock
+5. /cabinet/logout
+6. /cabinet/update_env_thresholds
 
 调用：
-1. nfc_node 的 ReadNfcCard action。
-2. face_node 的 AuthenticateFace action。
-3. vision_node 的 RunInventory action。
+1. face_node 的 /auth/authenticate_face action。
+2. 后续 NFC 恢复后调用 nfc_node 的 /auth/read_nfc_card action。
+3. 后续视觉接入后调用 vision_node 的 /vision/run_inventory action。
 4. actuator_node 的 open_lock / set_fan / beep service。
 
+当前重要参数：
+1. 正式接入 battery_node 后，simulate_missing_battery 必须为 false。
+2. vision_node 未完成前，simulate_missing_vision 可暂时保持 true 或由启动脚本显式控制。
+3. NFC SPI 未打通前，不应默认启用 I2C4 互斥认证方案。
 
-3. nfc_node（NFC 节点）
 
-类型：action 服务端，底层按需轮询 PN532。
+3. face_node（人脸识别与预览节点）
+
+类型：action 服务端 + 预览图像发布。
 
 硬件：
-1. PN532 接 SDA.0/SCL.0。
-2. 当前板端验证为 /dev/i2c-7。
-3. I2C 地址 0x24。
+1. 柜外摄像头，当前按板端实际配置使用。
 
 工作方式：
-1. 默认空闲，不持续刷卡。
-2. cabinet_logic_node 发起 ReadNfcCard action 后，进入刷卡窗口。
-3. 在 timeout 时间内低频轮询 PN532。
-4. 检测到卡片后读取 UID。
-5. 查询授权卡数据库，返回：
-   - success
-   - uid
-   - authorized
-   - user_name
-   - role
-6. 成功或超时后自动退出工作状态。
-7. 如果未来连接 PN532 IRQ 引脚，可将底层轮询改为 GPIO 中断触发。
+1. 持续发布 /face/preview 供 UI 认证页显示。
+2. cabinet_logic_node 发起 AuthenticateFace action 后进入认证窗口。
+3. 在 timeout 时间内采集图像并做人脸识别。
+4. 检测到授权人员后返回 success、user_name、role、confidence。
 
-建议 action：
-ReadNfcCard
+Action：
+/auth/authenticate_face
+
 目标：
   timeout_sec
+  min_confidence
+
+结果：
+  success
+  user_name
+  role
+  confidence
+  message
+
+
+4. nfc_node（NFC 节点，当前阻塞）
+
+类型：后续应为 action 服务端。
+
+当前状态：
+1. PN532 当前已转向 SPI 接法，但仍未稳定通讯。
+2. 不允许在当前默认启动脚本中把 nfc_node 当作可用节点。
+3. 待 PN532 SPI 打通后，再将其恢复进认证链路。
+
+后续目标 action：
+/auth/read_nfc_card
+
+目标：
+  timeout_sec
+
 结果：
   success
   uid
@@ -158,90 +255,97 @@ ReadNfcCard
   message
 
 
-4. face_node（人脸识别与验证节点）
-
-类型：action 服务端。
-
-硬件：
-1. 柜外 USB 摄像头，当前倾向 /dev/video21。
-2. 使用 USB/face_auth 中的 InsightFace 识别流程。
-
-工作方式：
-1. 默认空闲，不持续做人脸识别。
-2. cabinet_logic_node 发起 AuthenticateFace action 后，打开认证窗口。
-3. 在 timeout 时间内采集图像并做人脸识别。
-4. 检测到授权人员后返回成功。
-5. 成功或超时后自动退出工作状态。
-
-建议 action：
-AuthenticateFace
-目标：
-  timeout_sec
-  min_confidence
-结果：
-  success
-  user_name
-  role
-  confidence
-  message
-
-
 5. env_node（温湿度传感器节点）
 
 类型：纯发布节点。
 
 硬件：
-1. SHT30 接 SDA.1/SCL.1。
-2. 当前板端验证为 /dev/i2c-4。
-3. I2C 地址 0x44。
+1. SHT30 接 I2C4。
+2. 地址 0x44。
 
 工作方式：
 1. 常驻运行。
-2. 每 1s 读取一次 SHT30。
-3. 读取成功后立即发布温湿度数据。
-4. 消息中带 timestamp，不需要人为设计“读取与输出相差 0.5s”。
+2. 每 1s 左右读取一次 SHT30。
+3. 读取成功后发布温湿度。
 
 发布：
 /env/state
-字段建议：
+
+字段：
   temperature
   humidity
   valid
   timestamp
 
 
-6. vision_node（柜内视觉识别节点）
+6. battery_node（电池盒状态节点）
 
-类型：action 服务端，必要时发布一次图像和一次识别结果。
+类型：纯发布节点。
+
+当前硬件链路：
+1. 电池盒数据由 STM32 解码。
+2. STM32 PB0 输出单线脉宽状态。
+3. ELF 通过 gpiochip3 line 7 读取。
+
+当前推荐 ROS 启动参数：
+
+ros2 run smart_cabinet_nodes battery_node --ros-args \
+  -p chip:=gpiochip3 \
+  -p line:=7 \
+  -p confirm_frames:=2 \
+  -p timeout_sec:=25.0 \
+  -p period_sec:=3.0 \
+  -p poll_mode:=true \
+  -p poll_interval_sec:=0.0
+
+发布：
+/battery/state
+
+字段：
+  module_online
+  status_valid
+  box_present
+  slots              # [slot1, slot2, slot3, slot4]，bool
+  presence_mask
+  battery_levels     # 当前保持空数组
+  charging_on
+  relay_on
+  source             # 应为 stm32_pb0_presence_gpio
+  timestamp
+
+约束：
+1. 不得伪造电量百分比。
+2. battery_levels 在当前阶段保持空数组是正确行为。
+3. cabinet_logic_node 必须关闭 simulate_missing_battery，避免真实数据被 mock 掩盖。
+
+
+7. vision_node（柜内视觉识别节点，待正式 ROS 化）
+
+类型：后续应为 action 服务端。
 
 硬件：
 1. 柜内摄像头当前优先使用 /dev/video11。
-2. 后续接 YOLO/RKNN 工具识别模型。
+2. 工具识别模型已独立验证，但识别效果和专用数据集训练仍需继续优化。
 
 工作方式：
-1. 默认空闲，不持续推理，不高频发布原图。
-2. 以下两种情况触发盘点：
-   - 柜门关闭后，cabinet_logic_node 自动调用 RunInventory。
-   - 用户在显示屏点击“立即盘点”，ui_node 请求 cabinet_logic_node，再由 cabinet_logic_node 调用 RunInventory。
-3. 每次触发后：
+1. 默认空闲，不持续推理。
+2. 以下情况触发：
+   - 柜门关闭后自动盘点。
+   - 用户点击“立即盘点”。
+3. 每次触发：
    - 拍摄一张柜内图像。
-   - 将原图保存到本地，例如：
-     data/inventory_images/YYYYMMDD_HHMMSS.jpg
-   - 发布一次 /vision/inventory_image，供显示屏展示。
-   - 调用视觉模型进行识别。
-   - 发布一次 /vision/inventory_result。
-   - 将识别结果写入本地记录或数据库。
-4. 识别结果应包含：
-   - 每种工具数量。
-   - 五区各自状态。
-   - 缺失、错放、异常列表。
-   - 每个目标的类别、置信度、坐标位置。
+   - 保存到 data/inventory_images。
+   - 发布 /vision/inventory_image。
+   - 运行模型识别。
+   - 发布 /vision/inventory_result。
 
-建议 action：
-RunInventory
+后续 action：
+/vision/run_inventory
+
 目标：
-  reason              # door_closed / user_request / debug
+  reason
   save_image
+
 结果：
   success
   image_path
@@ -249,31 +353,6 @@ RunInventory
   zones
   detections
   message
-
-发布：
-1. /vision/inventory_image：每次盘点发布一张图像或压缩图像，供 cabinet_logic_node 汇总后转发为 /ui/inventory_image。
-2. /vision/inventory_result：每次盘点发布一次结构化识别结果。
-
-
-7. battery_node（电池盒充电状态节点）
-
-类型：纯发布节点，当前可先作为占位节点。
-
-说明：
-1. 电池充电模块目前尚未连接。
-2. 初期可发布 mock 或 unknown 状态，保证显示屏和主控逻辑接口先稳定。
-3. 等电池充电模块接入后，再替换为真实读取逻辑。
-
-发布：
-/battery/state
-字段建议：
-  module_online
-  status_valid
-  box_present
-  slots             # 四个电池位：present / empty / unknown
-  battery_levels    # 若硬件支持电量，则发布百分比；否则为空或 unknown
-  charging_on
-  timestamp
 
 
 8. actuator_node（继电器/执行器控制节点）
@@ -283,118 +362,85 @@ RunInventory
 硬件：
 1. 风扇：GPIO.28 -> gpiochip3 line 9 -> 二号继电器，低电平有效。
 2. 门锁：GPIO.25 -> gpiochip3 line 3 -> 三号继电器，低电平有效。
-3. 蜂鸣器：GPIO.23 -> gpiochip3 line 4，触发电平待实测。
+3. 蜂鸣器：GPIO.23 -> gpiochip3 line 4。
 
 工作方式：
 1. 常驻运行。
 2. 默认把所有继电器置于安全状态。
 3. 接收控制请求后执行，并返回结果。
 4. 门锁通电保护必须写死在节点内部：
-   - 单次通电时间不得超过 0.5s。
+   - 单次通电不得超过 0.5s。
    - 默认建议 0.3s。
-   - 即使外部传入更长时间，也必须截断或拒绝。
-5. 风扇可支持 set true / false。
-6. 蜂鸣器支持 beep(times, interval)。
+5. 风扇支持 set true / false。
+6. 蜂鸣器支持 beep。
 
 提供服务：
 1. /actuator/open_lock
-   请求：
-     pulse_sec
-   响应：
-     success
-     actual_pulse_sec
-     message
-
 2. /actuator/set_fan
-   请求：
-     on
-     reason
-   响应：
-     success
-     message
-
 3. /actuator/beep
-   请求：
-     times
-     on_sec
-     off_sec
-   响应：
-     success
-     message
 
 发布：
 /actuator/state
-字段建议：
+
+字段：
   lock_busy
   fan_on
   buzzer_busy
   timestamp
 
 
-三、核心业务流程
+四、核心业务流程
 
 1. 用户申请开柜流程
 
-1. 用户在显示屏点击“申请开柜”。
+1. 用户在 UI 点击“申请开柜”。
 2. ui_node 调用 /cabinet/request_open。
 3. cabinet_logic_node 进入 AUTH_PENDING。
-4. cabinet_logic_node 同时启动：
-   - nfc_node: ReadNfcCard(timeout=5s)
-   - face_node: AuthenticateFace(timeout=5s)
-5. NFC 或人脸任意一个认证成功：
-   - cabinet_logic_node 取消另一个认证任务。
-   - 发布认证成功事件。
+4. 当前默认调用 face_node 的 /auth/authenticate_face。
+5. 人脸认证成功后：
+   - cabinet_logic_node 记录当前用户。
    - 调用 /actuator/open_lock。
-6. 开锁成功：
-   - 状态切换为 CABINET_OPEN。
-   - ui_node 显示用户身份、开柜成功、柜门已打开。
-7. 5s 内两种认证均未成功：
-   - 状态回到 STANDBY 或保持认证页提示失败。
-   - 发布认证失败事件。
+   - 开锁成功后进入 CABINET_OPEN 或对应已认证态。
+6. 认证失败或超时：
+   - 回到 STANDBY 或保持认证页提示失败。
+7. 后续 PN532 打通后，可恢复 NFC + 人脸并行，任一通过即可开柜。
 
 
-2. 柜门关闭后自动盘点流程
-
-1. 系统检测到柜门关闭。
-   - 当前如果没有门磁，可先由用户点击“完成操作/开始盘点”模拟。
-   - 后续增加门磁后订阅 /door/state。
-2. cabinet_logic_node 进入 CHECKING_AFTER_CLOSE。
-3. cabinet_logic_node 调用 vision_node 的 RunInventory(reason=door_closed)。
-4. vision_node 拍摄一张柜内图像、保存、发布一次图像、运行模型、发布识别结果。
-5. cabinet_logic_node 根据识别结果判断：
-   - 正常：回到 STANDBY，记录盘点正常。
-   - 异常：进入 ALARM_ACTIVE，调用 /actuator/beep 让蜂鸣器响 3 下。
-6. ui_node 显示最新盘点图片、五区结果和异常提示。
-   - ui_node 实际订阅的是 /ui/inventory 和 /ui/inventory_image。
-   - /vision/inventory_result 和 /vision/inventory_image 先进入 cabinet_logic_node，由主控节点汇总、判断和转发。
-
-
-3. 用户点击立即盘点流程
+2. 用户点击立即盘点流程
 
 1. 用户在工具页点击“立即盘点”。
 2. ui_node 调用 /cabinet/request_inventory。
 3. cabinet_logic_node 判断当前状态是否允许盘点。
-4. 若允许，调用 vision_node 的 RunInventory(reason=user_request)。
-5. vision_node 每次只发布一次图像和一次识别结果，并保存图片和结果。
-6. ui_node 刷新工具页和总览页显示。
-   - ui_node 根据 /ui/inventory、/ui/summary、/ui/inventory_image 刷新，不直接订阅 vision_node 的原始结果。
+4. 如果 vision_node 可用，调用 /vision/run_inventory。
+5. 如果 vision_node 暂不可用，应记录事件并保持当前认证态。
+6. UI 根据 /ui/inventory、/ui/summary、/ui/inventory_image 刷新。
 
 
-4. 温湿度自动控制流程
+3. 温湿度自动控制流程
 
-1. env_node 每 1s 发布 /env/state。
+1. env_node 发布 /env/state。
 2. cabinet_logic_node 订阅温湿度。
-3. 湿度或温度超过阈值时：
-   - cabinet_logic_node 调用 /actuator/set_fan(on=true, reason=除湿/降温)。
-   - 发布环境异常事件。
-4. 环境恢复到关闭阈值后：
-   - cabinet_logic_node 调用 /actuator/set_fan(on=false, reason=环境恢复)。
-   - 发布环境恢复事件。
-5. cabinet_logic_node 将环境数据、风扇状态、报警状态汇总为 /ui/environment 和 /ui/summary。
-6. ui_node 显示温湿度、风扇状态和事件，但不直接订阅 /env/state。
+3. 湿度或温度超过开启阈值：
+   - 调用 /actuator/set_fan(on=true)。
+   - 发布环境事件。
+4. 湿度和温度均低于关闭阈值：
+   - 调用 /actuator/set_fan(on=false)。
+   - 发布恢复事件。
+5. cabinet_logic_node 发布 /ui/environment 和 /ui/summary。
+6. UI 显示温湿度、阈值、风扇状态，手动按钮调用 /cabinet/request_manual_fan。
 
 
-四、建议 topic / service / action 列表
+4. 充电盒状态流程
+
+1. STM32 读取电池盒原始状态并通过 PB0 单线输出。
+2. battery_node 读取 gpiochip3 line 7。
+3. battery_node 发布 /battery/state。
+4. cabinet_logic_node 订阅 /battery/state。
+5. cabinet_logic_node 转发 /ui/battery，并聚合到 /ui/summary。
+6. UI 充电页显示模块在线、状态有效、四槽电池在位情况。
+
+
+五、建议 topic / service / action 列表
 
 Topic：
 1. /cabinet/state
@@ -412,40 +458,53 @@ Topic：
 13. /ui/battery
 14. /ui/auth
 15. /ui/events
+16. /face/preview
 
 Service：
 1. /cabinet/request_open
 2. /cabinet/request_inventory
 3. /cabinet/request_manual_fan
 4. /cabinet/request_temp_unlock
-5. /actuator/open_lock
-6. /actuator/set_fan
-7. /actuator/beep
+5. /cabinet/logout
+6. /cabinet/update_env_thresholds
+7. /actuator/open_lock
+8. /actuator/set_fan
+9. /actuator/beep
 
 Action：
-1. /auth/read_nfc_card
-2. /auth/authenticate_face
-3. /vision/run_inventory
+1. /auth/authenticate_face
+2. /auth/read_nfc_card（PN532 打通后启用）
+3. /vision/run_inventory（vision_node ROS 化后启用）
 
 
-五、当前阶段实施建议
+六、当前阶段实施顺序
 
-第一步：先做最小 ROS2 骨架
-1. env_node：发布真实 SHT30 温湿度。
-2. actuator_node：提供真实风扇、门锁、蜂鸣器服务。
-3. cabinet_logic_node：订阅 /env/state，调用 /actuator/set_fan，并发布 /ui/environment。
-4. ui_node：先订阅 /ui/environment，显示温湿度；按钮调用 /cabinet/request_manual_fan。
+第一阶段：稳定当前可用全链路
+1. env_node：真实 SHT30。
+2. actuator_node：真实执行器。
+3. face_node：真实人脸认证 + /face/preview。
+4. battery_node：真实 STM32 PB0 电池盒状态。
+5. cabinet_logic_node：关闭 battery mock，保留 vision mock/保护。
+6. ui_node：试用 New-7.3 UI。
 
-第二步：做认证链路
-1. nfc_node：实现 ReadNfcCard action。
-2. face_node：实现 AuthenticateFace action。
-3. cabinet_logic_node：实现 request_open 流程。
+第二阶段：正式纳入充电节点
+1. start_current_usable_nodes.sh 启动 battery_node。
+2. cabinet_logic_node 启动时加 simulate_missing_battery:=false。
+3. stop_all_ros_nodes.sh 清理 battery_node。
+4. 验证 /battery/state、/ui/battery、/ui/summary 三层一致。
 
-第三步：做触发式视觉盘点
-1. vision_node：实现 RunInventory action 的拍照、保存和一次图像发布。
-2. 后续接入 YOLO/RKNN 模型，替换 mock 检测结果。
+第三阶段：恢复或替换 NFC
+1. 继续调通 PN532 SPI。
+2. 打通后恢复 nfc_node action。
+3. 再将 NFC 纳入 cabinet_logic_node 认证并行流程。
 
-第四步：显示屏完整接入
-1. 将 show/Script 的 MockBackend 替换为 RosBackend。
-2. 页面层尽量不改，只让 RosBackend 保持与 MockBackend 相同的 Qt 信号接口。
-3. 用户点击操作由 RosBackend 转成 ROS service/action 请求。
+第四阶段：柜内视觉 ROS 化
+1. vision_node 实现 /vision/run_inventory。
+2. 接入 /dev/video11。
+3. 接入专用工具识别模型。
+4. 发布 /vision/inventory_result 和 /vision/inventory_image。
+
+第五阶段：门磁与自动闭环
+1. 增加 door_node 或门磁订阅。
+2. 柜门关闭后自动触发盘点。
+3. 异常时报警，正常时保持或恢复对应认证态。

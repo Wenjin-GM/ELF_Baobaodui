@@ -53,8 +53,8 @@ except ImportError as e:
 # ==================== 配置常量 ====================
 
 # I2C配置，见 docs/connect_way.md
-I2C_BUS_NFC = 7      # PN532: SDA.0/SCL.0, 优先按 I2C7 验证
-I2C_BUS_SHT30 = 4    # SHT30: SDA.1/SCL.1, I2C4
+I2C_BUS_NFC = 4      # PN532: 接在 I2C4 (一主多从: PN532 0x24 + SHT30 0x44)
+I2C_BUS_SHT30 = 4    # SHT30: 接在 I2C4 (一主多从)
 I2C_ADDR_NFC = 0x24
 I2C_ADDR_SHT30 = 0x44
 

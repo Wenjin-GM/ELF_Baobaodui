@@ -18,17 +18,17 @@ else
 fi
 echo ""
 
-echo "2. 检查I2C7设备..."
-if sudo i2cdetect -y 7 2>/dev/null | grep -q "24"; then
-    echo "   ✓ PN532 (0x24) 已连接"
-    sudo i2cdetect -y 7 | grep -A1 "20:"
+echo "2. 检查I2C4设备 (PN532 当前 I2C 交换后接线)..."
+if sudo i2cdetect -y 4 2>/dev/null | grep -q "24"; then
+    echo "   ✓ PN532 (0x24) 已连接在 I2C4"
+    sudo i2cdetect -y 4 | grep -A1 "20:"
 else
-    echo "   ✗ I2C7未检测到PN532，继续检查I2C5..."
-    if sudo i2cdetect -y 5 2>/dev/null | grep -q "24"; then
-        echo "   ✓ PN532 (0x24) 出现在I2C5，请同步修改 I2C_BUS_NFC"
-        sudo i2cdetect -y 5 | grep -A1 "20:"
+    echo "   ✗ I2C4未检测到PN532，继续检查I2C7..."
+    if sudo i2cdetect -y 7 2>/dev/null | grep -q "24"; then
+        echo "   ✓ PN532 (0x24) 出现在I2C7"
+        sudo i2cdetect -y 7 | grep -A1 "20:"
     else
-        echo "   ✗ I2C5/I2C7均未检测到PN532"
+        echo "   ✗ I2C4/I2C7均未检测到PN532"
     fi
 fi
 echo ""

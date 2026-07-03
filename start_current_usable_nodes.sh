@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Start the currently usable real nodes for hands-on cabinet validation.
-# Real: SHT30 env, GPIO actuator, PN532 NFC, face preview/auth, cabinet logic, PyQt UI.
-# Mocked inside cabinet_logic_node: battery box and cabinet inventory vision.
+# Real: SHT30 env, GPIO actuator, face preview/auth, STM32 PB0 battery, cabinet logic, PyQt UI.
+# Mocked inside cabinet_logic_node: cabinet inventory vision (vision_node not online yet).
+# PN532 NFC (SPI) is not yet online; nfc_node is NOT started by default.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROS_WS="$PROJECT_ROOT/ros2_ws"
@@ -33,7 +34,8 @@ set -u
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
-export SMART_CABINET_SHOW_DIR="${SMART_CABINET_SHOW_DIR:-$PROJECT_ROOT/show/Script}"
+export SMART_CABINET_SHOW_DIR="${SMART_CABINET_SHOW_DIR:-$PROJECT_ROOT/show/New-7.3/Script}"
+export SMART_CABINET_UI_SCREEN="${SMART_CABINET_UI_SCREEN:-HDMI}"
 export PYTHONDONTWRITEBYTECODE=1
 
 UI_MODE="${SMART_CABINET_UI_MODE:-fullscreen}"  # fullscreen | windowed | bridge | none
@@ -64,24 +66,37 @@ echo "stopping previous smart cabinet nodes..."
 
 cd "$ROS_WS"
 
-start_node env_node \
-  ros2 run smart_cabinet_nodes env_node \
-  --ros-args -p period_sec:=1.0 -p dry_run:=false
+# env_node started via unified i2c4 exclusive control (stops nfc_node first)
+bash "$PROJECT_ROOT/scripts/i2c4_exclusive_node_ctl.sh" env
 
 start_node actuator_node \
   ros2 run smart_cabinet_nodes actuator_node \
   --ros-args -p dry_run:=false
 
-start_node nfc_node \
-  ros2 run smart_cabinet_nodes nfc_node \
-  --ros-args -p dry_run:=false -p bus:=7 -p address:=36 -p poll_sec:=0.1
+# battery_node reads STM32 PB0 presence via gpiochip3 line 7 (poll mode).
+start_node battery_node \
+  ros2 run smart_cabinet_nodes battery_node \
+  --ros-args \
+  -p chip:=gpiochip3 \
+  -p line:=7 \
+  -p confirm_frames:=2 \
+  -p timeout_sec:=25.0 \
+  -p period_sec:=3.0 \
+  -p poll_mode:=true \
+  -p poll_interval_sec:=0.0
+
+# nfc_node NOT started by default — PN532 SPI not yet online.
 
 start_node face_node \
   ros2 run smart_cabinet_nodes face_node \
   --ros-args -p dry_run:=false -p camera:=/dev/video21
 
 start_node cabinet_logic_node \
-  ros2 run smart_cabinet_nodes cabinet_logic_node
+  ros2 run smart_cabinet_nodes cabinet_logic_node \
+  --ros-args \
+  -p simulate_missing_battery:=false \
+  -p exclusive_i2c4_auth_mode:=false \
+  -p nfc_server_wait_sec:=0.1
 
 case "$UI_MODE" in
   fullscreen)
@@ -111,14 +126,15 @@ echo
 echo "Quick checks:"
 echo "  ros2 topic echo /ui/summary --once"
 echo "  ros2 topic info /face/preview"
-echo "  ros2 action list | grep read_nfc_card"
+echo "  ros2 action list | grep read_nfc_card || echo 'nfc action is expected to be absent: PN532 SPI not online'"
 echo
-echo "NFC cards:"
+echo "battery_node is started by default (STM32 PB0 via gpiochip3 line 7)."
+echo "nfc_node is NOT started by default — PN532 SPI not yet online."
+echo "SHT30独占 I2C4."
+echo
+echo "NFC cards (when PN532 SPI becomes available):"
 echo "  19C78529 -> User / user"
 echo "  2A86BE5B -> admin / admin"
-echo
-echo "Note: cabinet_logic_node currently gives NFC about 2 seconds before falling back to face."
-echo "      After tapping '申请开柜', place the NFC card promptly."
 
 if [[ "$FOREGROUND" != "0" ]]; then
   echo "entering foreground monitor; press Ctrl+C to stop all nodes"

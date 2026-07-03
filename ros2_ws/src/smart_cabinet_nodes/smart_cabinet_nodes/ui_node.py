@@ -169,12 +169,45 @@ def run_window(args):
     from main_window import MainWindow
     from ros_backend import RosBackend
 
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "0")
+    os.environ.setdefault("QT_SCALE_FACTOR", "1")
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, False)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     app = QApplication(sys.argv[:1])
     backend = RosBackend()
     window = MainWindow(backend=backend)
     app.aboutToQuit.connect(backend.stop)
+
+    def target_screen():
+        preferred_name = os.environ.get("SMART_CABINET_UI_SCREEN", "").strip()
+        screens = app.screens()
+        if preferred_name:
+            for screen in screens:
+                if preferred_name in screen.name():
+                    return screen
+        return app.primaryScreen()
+
+    screen = target_screen()
+    screen_geometry = screen.geometry()
+
+    def write_ui_diag():
+        text = (
+            f"[UI-DIAG] windowed={args.windowed} "
+            f"isFullScreen={window.isFullScreen()} "
+            f"targetScreen={screen.name()} "
+            f"target={screen_geometry.getRect()} "
+            f"primary={app.primaryScreen().name()} "
+            f"screen={app.primaryScreen().geometry().getRect()} "
+            f"available={app.primaryScreen().availableGeometry().getRect()} "
+            f"window={window.geometry().getRect()} "
+            f"frame={window.frameGeometry().getRect()}"
+        )
+        print(text, flush=True)
+        try:
+            diag_path = Path(os.environ.get("SMART_CABINET_UI_DIAG", "/tmp/smart_cabinet_ui_diag.txt"))
+            diag_path.write_text(text + "\n", encoding="utf-8")
+        except Exception as exc:
+            print(f"[UI-DIAG] failed to write diag: {exc}", flush=True)
 
     def quit_from_signal(signum, _frame):
         print(f"ui_node received signal {signum}, exiting...")
@@ -188,26 +221,43 @@ def run_window(args):
     signal_timer.timeout.connect(lambda: None)
 
     if args.windowed:
-        window.resize(1024, 600)
+        window.resize(screen_geometry.width(), screen_geometry.height())
+        window.move(screen_geometry.topLeft())
         window.show()
     else:
-        # Fullscreen: show + delayed re-apply to work around WM races
-        window.showFullScreen()
-        QTimer.singleShot(100, window.showFullScreen)
-        QTimer.singleShot(500, lambda: (
-            window.showFullScreen(),
-            window.raise_(),
-            window.activateWindow(),
-        ))
-        # Diagnostic: print geometry after event loop starts
-        QTimer.singleShot(1000, lambda: print(
-            f"[UI-DIAG] windowed={args.windowed} "
-            f"isFullScreen={window.isFullScreen()} "
-            f"screen={app.primaryScreen().geometry().getRect()} "
-            f"available={app.primaryScreen().availableGeometry().getRect()} "
-            f"window={window.geometry().getRect()} "
-            f"frame={window.frameGeometry().getRect()}"
-        ))
+        # On the ELF dual-display setup, native showFullScreen() may use the
+        # primary HDMI height even after moving to DSI. Use an exact frameless
+        # 1024x600 window on the selected DSI screen by default.
+        if os.environ.get("SMART_CABINET_UI_NATIVE_FULLSCREEN", "0") in {"1", "true", "yes", "on"}:
+            window.setGeometry(screen_geometry)
+            window.move(screen_geometry.topLeft())
+            window.showFullScreen()
+            if window.windowHandle():
+                window.windowHandle().setScreen(screen)
+            QTimer.singleShot(100, lambda: (window.setGeometry(screen_geometry), window.move(screen_geometry.topLeft()), window.showFullScreen()))
+            QTimer.singleShot(500, lambda: (
+                window.windowHandle().setScreen(screen) if window.windowHandle() else None,
+                window.setGeometry(screen_geometry),
+                window.move(screen_geometry.topLeft()),
+                window.showFullScreen(),
+                window.raise_(),
+                window.activateWindow(),
+            ))
+        else:
+            window.setWindowFlags(
+                window.windowFlags()
+                | Qt.FramelessWindowHint
+                | Qt.WindowStaysOnTopHint
+                | Qt.X11BypassWindowManagerHint
+            )
+            window.setFixedSize(screen_geometry.width(), screen_geometry.height())
+            window.setGeometry(screen_geometry)
+            window.move(screen_geometry.topLeft())
+            window.show()
+            QTimer.singleShot(100, lambda: (window.setFixedSize(screen_geometry.width(), screen_geometry.height()), window.setGeometry(screen_geometry), window.move(screen_geometry.topLeft()), window.raise_(), window.activateWindow()))
+            QTimer.singleShot(500, lambda: (window.setFixedSize(screen_geometry.width(), screen_geometry.height()), window.setGeometry(screen_geometry), window.move(screen_geometry.topLeft()), window.raise_(), window.activateWindow()))
+        # Diagnostic: print geometry after event loop starts.
+        QTimer.singleShot(1000, write_ui_diag)
 
     try:
         return app.exec_()

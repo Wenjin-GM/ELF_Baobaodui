@@ -76,3 +76,4 @@ echo
 echo "== Hardware permissions =="
 id
 ls -l /dev/gpiochip3 /dev/i2c-4 /dev/i2c-7 /dev/video11 /dev/video21 2>/dev/null || true
+echo "# i2c-4: PN532 0x24 + SHT30 0x44 一主多从"
