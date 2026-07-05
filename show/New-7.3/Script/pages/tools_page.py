@@ -138,6 +138,16 @@ class ToolsPage(QWidget):
         """初始化信号连接"""
         self.backend.tools_updated.connect(self._on_tools_updated)
 
+    def _status_kind(self, status):
+        text = str(status or "")
+        if text in ("\u6b63\u5e38", "normal"):
+            return "normal"
+        if text in ("\u501f\u51fa", "borrowed", "\u7f3a\u5931", "missing"):
+            return "borrowed"
+        if text in ("\u9519\u653e", "misplaced"):
+            return "misplaced"
+        return "abnormal"
+
     @pyqtSlot(dict)
     def _on_tools_updated(self, data):
         """工具数据更新"""
@@ -150,6 +160,15 @@ class ToolsPage(QWidget):
 
             # 根据状态设置颜色
             status_item = self.table.item(row, 5)
+            status_kind = self._status_kind(zone['status'])
+            if status_kind == 'normal':
+                status_item.setForeground(Qt.darkGreen)
+            elif status_kind == 'borrowed':
+                status_item.setForeground(Qt.red)
+            elif status_kind == 'misplaced':
+                status_item.setForeground(Qt.darkRed)
+            else:
+                status_item.setForeground(Qt.red)
             if zone['status'] == '正常':
                 status_item.setForeground(Qt.darkGreen)
             elif zone['status'] == '缺失':

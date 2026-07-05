@@ -279,7 +279,9 @@ class RosBackend(QObject):
             if status == "normal":
                 return "\u6b63\u5e38"
             if status == "missing":
-                return "\u7f3a\u5931"
+                return "\u501f\u51fa"
+            if status == "borrowed":
+                return "\u501f\u51fa"
             if status == "misplaced":
                 return "\u9519\u653e"
             if status == "extra":
@@ -294,10 +296,9 @@ class RosBackend(QObject):
         ]
 
         all_detections: List[Dict[str, Any]] = list(detections or [])
-        for raw in zones:
-            all_detections.extend(raw.get("detections", []))
-            all_detections.extend(raw.get("ignored_conflicts", []))
-            all_detections.extend(raw.get("ignored_duplicates", []))
+        if not all_detections:
+            for raw in zones:
+                all_detections.extend(raw.get("detections", []))
 
         normalized = [
             {
@@ -326,26 +327,24 @@ class RosBackend(QObject):
             )
             statuses = [str(raw.get("status", "normal")) for raw in matched]
 
-            if detected_total <= 0:
-                status = "missing"
-                borrowed = registered
-                current = 0
-            elif correct_current < registered or any(item == "missing" for item in statuses):
-                status = "misplaced" if detected_total >= registered else "missing"
-                borrowed = 0 if status == "misplaced" else max(0, registered - detected_total)
-                current = min(detected_total, registered) if status == "misplaced" else correct_current
-            elif any(item == "misplaced" for item in statuses):
+            detected_total = min(detected_total, registered)
+
+            if detected_total < registered:
+                status = "borrowed"
+                borrowed = registered - detected_total
+                current = detected_total
+            elif correct_current < registered or any(item == "misplaced" for item in statuses):
                 status = "misplaced"
                 borrowed = 0
-                current = correct_current
+                current = detected_total
             elif any(item != "normal" for item in statuses):
-                status = next((item for item in statuses if item != "normal"), "normal")
+                status = "misplaced"
                 borrowed = 0
-                current = correct_current
+                current = detected_total
             else:
                 status = "normal"
                 borrowed = 0
-                current = correct_current
+                current = detected_total
 
             normalized.append(
                 {
