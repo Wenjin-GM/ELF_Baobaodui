@@ -67,7 +67,7 @@ class ToolsPage(QWidget):
         # 五区工具表格
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["区域", "工具名称", "登记数量", "当前数量", "再借数量", "状态"])
+        self.table.setHorizontalHeaderLabels(["区域", "工具名称", "登记数量", "当前数量", "在借数量", "状态"])
         self.table.setRowCount(5)
         self.table.verticalHeader().setDefaultSectionSize(TABLE_ROW_HEIGHT)
         self.table.verticalHeader().setMinimumSectionSize(TABLE_ROW_HEIGHT)
@@ -151,16 +151,18 @@ class ToolsPage(QWidget):
     @pyqtSlot(dict)
     def _on_tools_updated(self, data):
         """工具数据更新"""
-        for zone in data['zones']:
-            row = zone['zone_id'] - 1
+        for zone in data.get('zones', []):
+            row = int(zone.get('zone_id', 0) or 0) - 1
+            if row < 0 or row >= self.table.rowCount():
+                continue
 
-            self.table.setItem(row, 3, QTableWidgetItem(str(zone['current'])))
-            self.table.setItem(row, 4, QTableWidgetItem(str(zone['borrowed'])))
-            self.table.setItem(row, 5, QTableWidgetItem(zone['status']))
+            self.table.setItem(row, 3, QTableWidgetItem(str(zone.get('current', '--'))))
+            self.table.setItem(row, 4, QTableWidgetItem(str(zone.get('borrowed', '--'))))
+            self.table.setItem(row, 5, QTableWidgetItem(str(zone.get('status', '异常'))))
 
             # 根据状态设置颜色
             status_item = self.table.item(row, 5)
-            status_kind = self._status_kind(zone['status'])
+            status_kind = self._status_kind(zone.get('status'))
             if status_kind == 'normal':
                 status_item.setForeground(Qt.darkGreen)
             elif status_kind == 'borrowed':
@@ -169,12 +171,6 @@ class ToolsPage(QWidget):
                 status_item.setForeground(Qt.darkRed)
             else:
                 status_item.setForeground(Qt.red)
-            if zone['status'] == '正常':
-                status_item.setForeground(Qt.darkGreen)
-            elif zone['status'] == '缺失':
-                status_item.setForeground(Qt.red)
-            elif zone['status'] == '错放':
-                status_item.setForeground(Qt.darkRed)
 
             # 居中对齐
             for col in [3, 4, 5]:

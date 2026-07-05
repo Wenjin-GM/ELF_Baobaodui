@@ -67,25 +67,6 @@ class RecordsPage(QWidget):
         self.filter_combo.currentTextChanged.connect(self._filter_records)
         header_layout.addWidget(self.filter_combo)
 
-        # 导出按钮
-        self.btn_export = QPushButton("导出 CSV")
-        self.btn_export.setFixedSize(170, ACTION_BUTTON_HEIGHT)
-        self.btn_export.setStyleSheet("""
-            QPushButton {
-                background-color: #C4612F;
-                border: none;
-                border-radius: 8px;
-                font-size: 14px;
-                color: #FFFFFF;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #A94E22;
-            }
-        """)
-        self.btn_export.clicked.connect(self._export_records)
-        header_layout.addWidget(self.btn_export)
-
         layout.addLayout(header_layout)
 
         # 记录表格
@@ -238,9 +219,3 @@ class RecordsPage(QWidget):
     def _filter_records(self):
         """筛选记录"""
         self._refresh_table()
-
-    def _export_records(self):
-        """导出记录为 CSV"""
-        print("[RecordsPage] 导出记录")
-        # TODO: 实现 CSV 导出功能
-        # 可以使用 QFileDialog 选择保存路径，然后写入 CSV 文件

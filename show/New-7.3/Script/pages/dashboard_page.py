@@ -253,32 +253,45 @@ class DashboardPage(QWidget):
         self.backend.charging_updated.connect(self._on_charging_updated)
         self.backend.event_added.connect(self._on_event_added)
 
+    def _status_kind(self, status):
+        text = str(status or "")
+        if text in ("正常", "normal"):
+            return "normal"
+        if text in ("借出", "borrowed", "missing"):
+            return "borrowed"
+        if text in ("错放", "misplaced"):
+            return "misplaced"
+        return "abnormal"
+
     @pyqtSlot(dict)
     def _on_env_updated(self, data):
         """环境数据更新"""
-        self.temp_label.setText(f"{data['temperature']} ℃")
-        self.humidity_label.setText(f"{data['humidity']} %RH")
+        self.temp_label.setText(f"{data.get('temperature', '--')} ℃")
+        self.humidity_label.setText(f"{data.get('humidity', '--')} %RH")
 
-        fan_status = "开 / " + data['fan_purpose'] if data['fan_on'] else "关"
+        fan_status = "开 / " + str(data.get('fan_purpose', '')) if data.get('fan_on') else "关"
         self.fan_label.setText(f"风扇：{fan_status}")
 
     @pyqtSlot(dict)
     def _on_tools_updated(self, data):
         """工具数据更新"""
-        for zone in data['zones']:
-            zone_id = zone['zone_id']
+        for zone in data.get('zones', []):
+            zone_id = zone.get('zone_id')
             if zone_id in self.zone_labels:
-                status_text = zone['status']
+                status_text = str(zone.get('status', '异常'))
                 self.zone_labels[zone_id]['status'].setText(status_text)
 
                 # 根据状态更改边框颜色
                 frame = self.zone_labels[zone_id]['frame']
-                if status_text == "正常":
+                status_kind = self._status_kind(status_text)
+                if status_kind == "normal":
                     bg_color = "#FBF9F5"
-                elif status_text == "缺失":
-                    bg_color = "#FFE8E0"  # 浅红背景
+                elif status_kind == "borrowed":
+                    bg_color = "#FFF0E5"
+                elif status_kind == "misplaced":
+                    bg_color = "#FFE8E0"
                 else:
-                    bg_color = "#FFE8E0"  # 浅红背景
+                    bg_color = "#FFE8E0"
 
                 frame.setStyleSheet(f"""
                     QFrame {{
@@ -291,13 +304,13 @@ class DashboardPage(QWidget):
     @pyqtSlot(dict)
     def _on_charging_updated(self, data):
         """充电数据更新"""
-        box_status = "在位" if data['box_present'] else "离位"
+        box_status = "在位" if data.get('box_present') else "离位"
         self.box_label.setText(f"电池盒：{box_status}")
 
-        charging_status = "开启" if data['relay_on'] else "关闭"
+        charging_status = "开启" if data.get('relay_on') else "关闭"
         self.charging_status_label.setText(f"充电电源：{charging_status}")
 
-        slots_count = sum(data['slots'])
+        slots_count = sum(bool(item) for item in data.get('slots', []))
         self.slots_label.setText(f"电池位：{slots_count}/4 在位")
 
     @pyqtSlot(dict)
@@ -312,12 +325,12 @@ class DashboardPage(QWidget):
                     widget.deleteLater()
 
         # 添加新事件
-        event_label = QLabel(f"[{event['type']}] {event['content']}")
+        event_label = QLabel(f"[{event.get('type', '事件')}] {event.get('content', '')}")
         event_label.setStyleSheet("font-size: 13px; color: #1F2421; padding: 4px;")
         event_label.setWordWrap(True)
 
         # 根据级别设置颜色
-        if event['level'] == 'warning':
+        if event.get('level') == 'warning':
             event_label.setStyleSheet("font-size: 13px; color: #C4612F; padding: 4px;")
 
         self.events_layout.insertWidget(0, event_label)

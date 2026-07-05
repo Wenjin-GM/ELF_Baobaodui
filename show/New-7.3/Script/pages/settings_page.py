@@ -168,24 +168,6 @@ class SettingsPage(QWidget):
         self.auto_charging_checkbox.setStyleSheet("font-size: 14px; color: #1F2421;")
         layout.addWidget(self.auto_charging_checkbox)
 
-        # 按钮组
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(12)
-
-        btn_enter_debug = QPushButton("进入维护模式")
-        btn_enter_debug.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        btn_enter_debug.setStyleSheet(self._get_button_style())
-        btn_enter_debug.clicked.connect(self._enter_maintenance)
-        buttons_layout.addWidget(btn_enter_debug)
-
-        btn_export_data = QPushButton("导出所有数据")
-        btn_export_data.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        btn_export_data.setStyleSheet(self._get_button_style())
-        btn_export_data.clicked.connect(self._export_all_data)
-        buttons_layout.addWidget(btn_export_data)
-
-        layout.addLayout(buttons_layout)
-
         return card
 
     def _create_danger_card(self) -> QFrame:
@@ -293,18 +275,6 @@ class SettingsPage(QWidget):
                 f"风扇开 {t_on}℃ / 关 {t_off}℃")
         else:
             QMessageBox.warning(self, "设置", "后端不支持在线更新阈值")
-
-    def _enter_maintenance(self):
-        """进入维护模式"""
-        reply = QMessageBox.question(self, "确认", "确定进入维护模式吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            self.state_machine.on_enter_maintenance()
-
-    def _export_all_data(self):
-        """导出所有数据"""
-        print("[SettingsPage] 导出所有数据")
-        QMessageBox.information(self, "导出", "数据导出功能待实现")
 
     def _temp_unlock(self):
         """临时开锁"""

@@ -52,7 +52,7 @@ class RosBackend(QObject):
         self._spin_thread: threading.Thread | None = None
         self._running = False
         self.fan_on = False
-        self._last_borrow_event_key = ""
+        self._last_tool_event_key = ""
 
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -219,22 +219,29 @@ class RosBackend(QObject):
         zones = self._normalize_zones(data.get("zones", []), data.get("detections", []))
         self.tools_updated.emit({"zones": zones, "checking": False})
         borrowed_rows = [zone for zone in zones if int(zone.get("borrowed", 0) or 0) > 0]
+        misplaced_rows = [zone for zone in zones if str(zone.get("status", "")) == "\u9519\u653e"]
         event_key = "|".join(
-            f"{zone.get('zone_name')}:{zone.get('borrowed')}" for zone in borrowed_rows
+            [f"borrowed:{zone.get('zone_name')}:{zone.get('borrowed')}" for zone in borrowed_rows]
+            + [f"misplaced:{zone.get('zone_name')}" for zone in misplaced_rows]
         )
-        if borrowed_rows and event_key != self._last_borrow_event_key:
-            self._last_borrow_event_key = event_key
-            content = "\uff1b".join(
-                f"{zone.get('zone_name')} \u501f\u51fa {zone.get('borrowed')} \u4e2a" for zone in borrowed_rows
+        if event_key and event_key != self._last_tool_event_key:
+            self._last_tool_event_key = event_key
+            parts = [
+                f"{self._display_zone_name(zone.get('zone_name'))} \u501f\u51fa {zone.get('borrowed')} \u4e2a"
+                for zone in borrowed_rows
+            ]
+            parts.extend(
+                f"{self._display_zone_name(zone.get('zone_name'))} \u9519\u653e"
+                for zone in misplaced_rows
             )
             self.event_added.emit({
                 "type": "\u76d8\u70b9",
-                "content": content,
+                "content": "\uff1b".join(parts),
                 "level": "warning",
                 "timestamp": data.get("timestamp", ""),
             })
-        elif not borrowed_rows:
-            self._last_borrow_event_key = ""
+        elif not event_key:
+            self._last_tool_event_key = ""
 
     def _on_battery(self, msg):
         data = self._loads(msg.data)
@@ -269,6 +276,16 @@ class RosBackend(QObject):
             "confidence": float(data.get("confidence", 0.0) or 0.0),
             "timestamp": data.get("timestamp", ""),
         }
+
+    def _display_zone_name(self, zone_name: Any) -> str:
+        names = {
+            "battery_box_zone": "\u7535\u6c60\u76d2\u5145\u7535\u533a",
+            "vise_zone": "\u94b3\u5b50\u533a",
+            "thermometer_zone": "\u6d4b\u6e29\u67aa\u533a",
+            "multimeter_zone": "\u4e07\u7528\u8868\u533a",
+            "insulating_gloves_zone": "\u7edd\u7f18\u624b\u5957\u533a",
+        }
+        return names.get(str(zone_name or ""), str(zone_name or "未知区域"))
 
     def _normalize_zones(self, zones: List[Dict[str, Any]], detections: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
         """Aggregate 8 calibrated vision slots into the UI's 5 displayed rows."""

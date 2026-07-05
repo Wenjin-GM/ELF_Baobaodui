@@ -92,7 +92,7 @@ class MockBackend(QObject):
 
     def _update_tools_data(self):
         """模拟工具状态更新"""
-        # 五区工具状态：正常/缺失/错放
+        # 五区工具状态：正常/借出/错放
         zones = [
             {
                 "zone_id": 1,
@@ -100,7 +100,7 @@ class MockBackend(QObject):
                 "registered": 1,
                 "current": 1,
                 "borrowed": 0,
-                "status": "正常"  # 正常/缺失/错放
+                "status": "正常"  # 正常/借出/错放
             },
             {
                 "zone_id": 2,
@@ -108,7 +108,7 @@ class MockBackend(QObject):
                 "registered": 2,
                 "current": random.choice([2, 1, 2]),
                 "borrowed": 0,
-                "status": random.choice(["正常", "正常", "缺失"])
+                "status": random.choice(["正常", "正常", "借出"])
             },
             {
                 "zone_id": 3,
@@ -132,14 +132,14 @@ class MockBackend(QObject):
                 "registered": 2,
                 "current": random.choice([2, 2, 1]),
                 "borrowed": 0,
-                "status": random.choice(["正常", "正常", "缺失"])
+                "status": random.choice(["正常", "正常", "借出"])
             }
         ]
 
         for zone in zones:
             zone["borrowed"] = zone["registered"] - zone["current"]
             if zone["current"] < zone["registered"]:
-                zone["status"] = "缺失"
+                zone["status"] = "借出"
             elif zone["current"] > zone["registered"]:
                 zone["status"] = "错放"
 
@@ -199,6 +199,25 @@ class MockBackend(QObject):
         }
         self.event_added.emit(event)
 
+    def request_manual_fan(self, on: bool, reason: str = "ui_button"):
+        """模拟手动风扇控制"""
+        self.fan_on = bool(on)
+        self.env_updated.emit({
+            "temperature": round(self.current_temp, 1),
+            "humidity": round(self.current_humidity, 1),
+            "fan_on": self.fan_on,
+            "fan_purpose": "手动" if self.fan_on else "待机",
+            "alarm_on": False,
+            "timestamp": datetime.now().isoformat()
+        })
+        event = {
+            "type": "环境",
+            "content": f"手动{'开启' if self.fan_on else '关闭'}风扇",
+            "level": "info",
+            "timestamp": datetime.now().isoformat()
+        }
+        self.event_added.emit(event)
+
     def simulate_auth_failed(self):
         """模拟认证失败"""
         auth_data = {
@@ -240,7 +259,7 @@ class MockBackend(QObject):
         }
         self.event_added.emit(event)
 
-    def simulate_alarm(self, alarm_type: str = "工具缺失"):
+    def simulate_alarm(self, alarm_type: str = "工具借出"):
         """模拟报警"""
         alarm_data = {
             "type": alarm_type,

@@ -141,30 +141,17 @@ class AuthPage(QWidget):
         buttons_layout = QGridLayout()
         buttons_layout.setSpacing(10)
 
-        # 模拟认证成功按钮（演示用）
-        self.btn_auth_user = QPushButton("模拟普通用户认证")
-        self.btn_auth_user.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_auth_user.setStyleSheet(self._get_button_style())
-        self.btn_auth_user.clicked.connect(self._simulate_user_auth)
-        buttons_layout.addWidget(self.btn_auth_user, 0, 0)
-
-        self.btn_auth_admin = QPushButton("模拟管理员认证")
-        self.btn_auth_admin.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_auth_admin.setStyleSheet(self._get_button_style())
-        self.btn_auth_admin.clicked.connect(self._simulate_admin_auth)
-        buttons_layout.addWidget(self.btn_auth_admin, 0, 1)
-
         self.btn_open_cabinet = QPushButton("申请开柜")
         self.btn_open_cabinet.setFixedHeight(ACTION_BUTTON_HEIGHT)
         self.btn_open_cabinet.setStyleSheet(self._get_button_style("#C4612F", "#FFFFFF"))
         self.btn_open_cabinet.clicked.connect(self._request_open_cabinet)
-        buttons_layout.addWidget(self.btn_open_cabinet, 1, 0)
+        buttons_layout.addWidget(self.btn_open_cabinet, 0, 0)
 
         self.btn_logout = QPushButton("退出登录")
         self.btn_logout.setFixedHeight(ACTION_BUTTON_HEIGHT)
         self.btn_logout.setStyleSheet(self._get_button_style())
         self.btn_logout.clicked.connect(self._logout)
-        buttons_layout.addWidget(self.btn_logout, 1, 1)
+        buttons_layout.addWidget(self.btn_logout, 0, 1)
 
         right_layout.addLayout(buttons_layout)
         right_layout.addStretch()
@@ -229,20 +216,21 @@ class AuthPage(QWidget):
     @pyqtSlot(dict)
     def _on_auth_updated(self, data):
         """认证数据更新"""
-        if data['success']:
+        if data.get('success'):
             self.nfc_status_label.setText("已授权")
             self.nfc_status_label.setStyleSheet("font-size: 14px; color: #5C635D;")
 
             if data.get('card_uid'):
                 self.card_uid_label.setText(f"卡 UID: {data['card_uid']}")
 
-            self.user_name_label.setText(f"用户: {data['user_name']}")
+            user_name = data.get('user_name', '')
+            self.user_name_label.setText(f"用户: {user_name}")
 
-            role_text = "管理员" if data['role'] == 'admin' else "普通用户"
+            role_text = "管理员" if data.get('role') == 'admin' else "普通用户"
             self.role_label.setText(f"权限: {role_text}")
 
-            if data['method'] == '人脸识别':
-                self.face_status_label.setText(f"已识别: {data['user_name']}")
+            if data.get('method') == '人脸识别':
+                self.face_status_label.setText(f"已识别: {user_name}")
                 if data.get('confidence'):
                     self.confidence_label.setText(f"置信度: {data['confidence']:.2f}")
         else:
@@ -254,18 +242,6 @@ class AuthPage(QWidget):
 
             self.user_name_label.setText("用户: --")
             self.role_label.setText("权限: --")
-
-    def _simulate_user_auth(self):
-        """模拟普通用户认证"""
-        self.backend.simulate_auth_success("高硕", "user")
-        if not hasattr(self.backend, "summary_updated"):
-            self.state_machine.on_auth_success("高硕", "user")
-
-    def _simulate_admin_auth(self):
-        """模拟管理员认证"""
-        self.backend.simulate_auth_success("赵增辉", "admin")
-        if not hasattr(self.backend, "summary_updated"):
-            self.state_machine.on_auth_success("赵增辉", "admin")
 
     def _request_open_cabinet(self):
         """申请开柜"""

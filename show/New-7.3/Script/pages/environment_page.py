@@ -172,11 +172,22 @@ class EnvironmentPage(QWidget):
         layout.addLayout(alarm_layout)
 
         # 手动控制按钮
-        self.btn_fan_toggle = QPushButton("手动开启风扇")
-        self.btn_fan_toggle.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_fan_toggle.setStyleSheet(self._get_button_style())
-        self.btn_fan_toggle.clicked.connect(self._toggle_fan)
-        layout.addWidget(self.btn_fan_toggle)
+        fan_buttons_layout = QHBoxLayout()
+        fan_buttons_layout.setSpacing(12)
+
+        self.btn_fan_on = QPushButton("手动开启风扇")
+        self.btn_fan_on.setFixedHeight(ACTION_BUTTON_HEIGHT)
+        self.btn_fan_on.setStyleSheet(self._get_button_style("#C4612F", "#FFFFFF"))
+        self.btn_fan_on.clicked.connect(self._fan_on)
+        fan_buttons_layout.addWidget(self.btn_fan_on)
+
+        self.btn_fan_off = QPushButton("手动关闭风扇")
+        self.btn_fan_off.setFixedHeight(ACTION_BUTTON_HEIGHT)
+        self.btn_fan_off.setStyleSheet(self._get_button_style())
+        self.btn_fan_off.clicked.connect(self._fan_off)
+        fan_buttons_layout.addWidget(self.btn_fan_off)
+
+        layout.addLayout(fan_buttons_layout)
 
         layout.addStretch()
 
@@ -305,8 +316,8 @@ class EnvironmentPage(QWidget):
     def _on_env_updated(self, data):
         """环境数据更新"""
         # 更新显示
-        self.temp_value_label.setText(f"{data['temperature']} ℃")
-        self.humidity_value_label.setText(f"{data['humidity']} %RH")
+        self.temp_value_label.setText(f"{data.get('temperature', '--')} ℃")
+        self.humidity_value_label.setText(f"{data.get('humidity', '--')} %RH")
 
         # 更新时间
         self.update_time_label.setText(f"更新时间: {datetime.now().strftime('%H:%M:%S')}")
@@ -321,19 +332,17 @@ class EnvironmentPage(QWidget):
         self._fan_trigger_label.setText(f"湿度 > {h_on}% 或 温度 > {t_on}℃")
 
         # 风扇状态
-        if data['fan_on']:
+        if data.get('fan_on'):
             self.fan_status_label.setText("开启")
             self.fan_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #C4612F;")
-            self.fan_purpose_label.setText(f"用途: {data['fan_purpose']}")
-            self.btn_fan_toggle.setText("手动关闭风扇")
+            self.fan_purpose_label.setText(f"用途: {data.get('fan_purpose', '运行')}")
         else:
             self.fan_status_label.setText("关闭")
             self.fan_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #5C635D;")
             self.fan_purpose_label.setText("用途: 待机")
-            self.btn_fan_toggle.setText("手动开启风扇")
 
         # 报警器状态
-        if data['alarm_on']:
+        if data.get('alarm_on'):
             self.alarm_status_label.setText("开启")
             self.alarm_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #C4612F;")
         else:
@@ -352,9 +361,14 @@ class EnvironmentPage(QWidget):
                             "下降" if self.humidity_history[-1] < self.humidity_history[-10] else "稳定"
             self.trend_label.setText(f"温度: {temp_trend}  |  湿度: {humidity_trend}")
 
-    def _toggle_fan(self):
-        """手动切换风扇"""
-        print("[EnvironmentPage] 手动切换风扇")
+    def _fan_on(self):
+        """手动开启风扇"""
+        print("[EnvironmentPage] 手动开启风扇")
         if hasattr(self.backend, "request_manual_fan"):
-            self.backend.request_manual_fan(not bool(getattr(self.backend, "fan_on", False)), "ui_button")
-        # 这里应该调用后端接口
+            self.backend.request_manual_fan(True, "ui_button")
+
+    def _fan_off(self):
+        """手动关闭风扇"""
+        print("[EnvironmentPage] 手动关闭风扇")
+        if hasattr(self.backend, "request_manual_fan"):
+            self.backend.request_manual_fan(False, "ui_button")

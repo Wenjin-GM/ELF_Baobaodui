@@ -49,26 +49,6 @@ class ChargingPage(QWidget):
 
         layout.addLayout(content_layout)
 
-        # 操作按钮
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(12)
-
-        self.btn_manual_on = QPushButton("手动开启充电")
-        self.btn_manual_on.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_manual_on.setStyleSheet(self._get_button_style())
-        self.btn_manual_on.clicked.connect(self._manual_charging_on)
-        buttons_layout.addWidget(self.btn_manual_on)
-
-        self.btn_manual_off = QPushButton("手动关闭充电")
-        self.btn_manual_off.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_manual_off.setStyleSheet(self._get_button_style())
-        self.btn_manual_off.clicked.connect(self._manual_charging_off)
-        buttons_layout.addWidget(self.btn_manual_off)
-
-        buttons_layout.addStretch()
-
-        layout.addLayout(buttons_layout)
-
         layout.addStretch()
 
     def _create_status_card(self) -> QFrame:
@@ -211,7 +191,7 @@ class ChargingPage(QWidget):
     def _on_charging_updated(self, data):
         """充电数据更新"""
         # 电池盒状态
-        if data['box_present']:
+        if data.get('box_present'):
             self.box_status_label.setText("电池盒：在位")
             self.box_status_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #5C635D;")
         else:
@@ -219,7 +199,7 @@ class ChargingPage(QWidget):
             self.box_status_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #C4612F;")
 
         # 充电电源状态
-        if data['relay_on']:
+        if data.get('relay_on'):
             self.relay_status_label.setText("充电电源：开启")
             self.relay_status_label.setStyleSheet("font-size: 18px; color: #5C635D; font-weight: bold;")
         else:
@@ -227,7 +207,8 @@ class ChargingPage(QWidget):
             self.relay_status_label.setStyleSheet("font-size: 18px; color: #5C635D;")
 
         # 模块状态
-        if data['module_online'] and data['status_valid']:
+        module_ready = bool(data.get('module_online')) and bool(data.get('status_valid'))
+        if module_ready:
             self.module_status_label.setText("充电检测模块：在线")
             self.module_status_label.setStyleSheet("font-size: 14px; color: #5C635D;")
         else:
@@ -235,8 +216,12 @@ class ChargingPage(QWidget):
             self.module_status_label.setStyleSheet("font-size: 14px; color: #C4612F;")
 
         # 电池位状态
-        if data['module_online'] and data['status_valid']:
-            for i, present in enumerate(data['slots']):
+        slots = list(data.get('slots', []))[:4]
+        while len(slots) < 4:
+            slots.append(False)
+
+        if module_ready:
+            for i, present in enumerate(slots):
                 if present:
                     self.slot_labels[i]['status'].setText("在位")
                     self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #5C635D; font-weight: bold;")
@@ -261,15 +246,3 @@ class ChargingPage(QWidget):
             for i in range(4):
                 self.slot_labels[i]['status'].setText("--")
                 self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #5C635D;")
-
-    def _manual_charging_on(self):
-        """手动开启充电"""
-        print("[ChargingPage] 手动开启充电")
-        # 这里应该调用后端接口
-        self.strategy_value_label.setText("手动")
-
-    def _manual_charging_off(self):
-        """手动关闭充电"""
-        print("[ChargingPage] 手动关闭充电")
-        # 这里应该调用后端接口
-        self.strategy_value_label.setText("手动")
