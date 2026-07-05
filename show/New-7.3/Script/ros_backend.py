@@ -52,6 +52,7 @@ class RosBackend(QObject):
         self._spin_thread: threading.Thread | None = None
         self._running = False
         self.fan_on = False
+        self._last_borrow_event_key = ""
 
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -169,7 +170,7 @@ class RosBackend(QObject):
             if arr.shape[2] == 4:
                 fmt = QImage.Format_RGBA8888
             elif arr.shape[2] == 3:
-                arr = arr[..., ::-1].copy()  # BGR → RGB, force contiguous
+                arr = arr[..., ::-1].copy()  # BGR 鈫?RGB, force contiguous
                 fmt = QImage.Format_RGB888
             else:
                 fmt = QImage.Format_Grayscale8
@@ -215,7 +216,25 @@ class RosBackend(QObject):
 
     def _on_inventory(self, msg):
         data = self._loads(msg.data)
-        self.tools_updated.emit({"zones": self._normalize_zones(data.get("zones", [])), "checking": False})
+        zones = self._normalize_zones(data.get("zones", []), data.get("detections", []))
+        self.tools_updated.emit({"zones": zones, "checking": False})
+        borrowed_rows = [zone for zone in zones if int(zone.get("borrowed", 0) or 0) > 0]
+        event_key = "|".join(
+            f"{zone.get('zone_name')}:{zone.get('borrowed')}" for zone in borrowed_rows
+        )
+        if borrowed_rows and event_key != self._last_borrow_event_key:
+            self._last_borrow_event_key = event_key
+            content = "\uff1b".join(
+                f"{zone.get('zone_name')} \u501f\u51fa {zone.get('borrowed')} \u4e2a" for zone in borrowed_rows
+            )
+            self.event_added.emit({
+                "type": "\u76d8\u70b9",
+                "content": content,
+                "level": "warning",
+                "timestamp": data.get("timestamp", ""),
+            })
+        elif not borrowed_rows:
+            self._last_borrow_event_key = ""
 
     def _on_battery(self, msg):
         data = self._loads(msg.data)
@@ -251,29 +270,91 @@ class RosBackend(QObject):
             "timestamp": data.get("timestamp", ""),
         }
 
-    def _normalize_zones(self, zones: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        normalized = []
-        for index in range(5):
-            raw = zones[index] if index < len(zones) else {}
-            registered = int(raw.get("registered", 0) or 0)
-            current = int(raw.get("current", registered) or 0)
-            status = str(raw.get("status", "normal"))
+    def _normalize_zones(self, zones: List[Dict[str, Any]], detections: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+        """Aggregate 8 calibrated vision slots into the UI's 5 displayed rows."""
+        def norm_class(name: str) -> str:
+            return str(name or "").strip().lower().replace("_", " ")
+
+        def display_status(status: str) -> str:
             if status == "normal":
-                status_text = "正常"
-            elif status == "missing":
-                status_text = "缺失"
-            elif status == "misplaced":
-                status_text = "错放"
+                return "\u6b63\u5e38"
+            if status == "missing":
+                return "\u7f3a\u5931"
+            if status == "misplaced":
+                return "\u9519\u653e"
+            if status == "extra":
+                return "\u5f02\u5e38"
+            return str(status or "")
+
+        class_rows = [
+            {"zone_id": 2, "zone_name": "vise_zone", "classes": {"vise"}, "registered": 2},
+            {"zone_id": 3, "zone_name": "thermometer_zone", "classes": {"thermometer"}, "registered": 2},
+            {"zone_id": 4, "zone_name": "multimeter_zone", "classes": {"multimeter"}, "registered": 2},
+            {"zone_id": 5, "zone_name": "insulating_gloves_zone", "classes": {"insulating gloves"}, "registered": 2},
+        ]
+
+        all_detections: List[Dict[str, Any]] = list(detections or [])
+        for raw in zones:
+            all_detections.extend(raw.get("detections", []))
+            all_detections.extend(raw.get("ignored_conflicts", []))
+            all_detections.extend(raw.get("ignored_duplicates", []))
+
+        normalized = [
+            {
+                "zone_id": 1,
+                "zone_name": "battery_box_zone",
+                "registered": 1,
+                "current": 1,
+                "borrowed": 0,
+                "status": "\u6b63\u5e38",
+            }
+        ]
+
+        for row in class_rows:
+            matched = []
+            for raw in zones:
+                expected = {norm_class(item) for item in raw.get("expected_classes", [])}
+                if expected & row["classes"]:
+                    matched.append(raw)
+
+            registered = sum(int(raw.get("registered", 0) or 0) for raw in matched) or row["registered"]
+            correct_current = sum(int(raw.get("current", 0) or 0) for raw in matched)
+            detected_total = sum(
+                1 for det in all_detections
+                if norm_class(det.get("class_name")) in row["classes"]
+                and not str(det.get("placement", "")).startswith("ignored_")
+            )
+            statuses = [str(raw.get("status", "normal")) for raw in matched]
+
+            if detected_total <= 0:
+                status = "missing"
+                borrowed = registered
+                current = 0
+            elif correct_current < registered or any(item == "missing" for item in statuses):
+                status = "misplaced" if detected_total >= registered else "missing"
+                borrowed = 0 if status == "misplaced" else max(0, registered - detected_total)
+                current = min(detected_total, registered) if status == "misplaced" else correct_current
+            elif any(item == "misplaced" for item in statuses):
+                status = "misplaced"
+                borrowed = 0
+                current = correct_current
+            elif any(item != "normal" for item in statuses):
+                status = next((item for item in statuses if item != "normal"), "normal")
+                borrowed = 0
+                current = correct_current
             else:
-                status_text = status
+                status = "normal"
+                borrowed = 0
+                current = correct_current
+
             normalized.append(
                 {
-                    "zone_id": int(raw.get("zone_id", index + 1) or index + 1),
-                    "zone_name": raw.get("zone_name", f"zone_{index + 1}"),
+                    "zone_id": row["zone_id"],
+                    "zone_name": row["zone_name"],
                     "registered": registered,
                     "current": current,
-                    "borrowed": int(raw.get("borrowed", max(0, registered - current)) or 0),
-                    "status": status_text,
+                    "borrowed": max(0, borrowed),
+                    "status": display_status(status),
                 }
             )
         return normalized

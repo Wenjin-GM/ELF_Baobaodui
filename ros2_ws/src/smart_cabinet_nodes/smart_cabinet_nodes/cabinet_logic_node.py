@@ -61,6 +61,7 @@ class CabinetLogicNode(Node):
         self.summary_seq = 0
         self.mock_battery_tick = 0
         self.mock_inventory_tick = 0
+        self.inventory_in_progress = False
         ensure_data_dirs()
 
         ui_qos = QoSProfile(
@@ -497,6 +498,86 @@ class CabinetLogicNode(Node):
             self.add_event("盘点", f"盘点异常: {result.message}", "warning")
             self.call_beep()
             self.set_state("ALARM_ACTIVE")
+
+    # Keep these definitions after the original inventory methods so this
+    # runtime-safe implementation is the one bound on the class.
+    def request_inventory(self, request, response):
+        reason = request.reason or "user_request"
+        self.add_event("ui", f"request_inventory received: {reason}", "info")
+        if self.inventory_in_progress or self.state == "CHECKING_AFTER_CLOSE":
+            response.accepted = False
+            response.message = "inventory already in progress"
+            self.add_event("ui", response.message, "warning")
+            return response
+        if self.state not in self.AUTHED_STATES and self.state not in {"CABINET_OPEN", "ALARM_ACTIVE"}:
+            response.accepted = False
+            response.message = f"request_inventory requires authenticated state, current={self.state}"
+            self.add_event("ui", response.message, "warning")
+            return response
+        if self.state == "ALARM_ACTIVE" and not self.current_user:
+            response.accepted = False
+            response.message = "request_inventory in alarm state requires logged-in user"
+            self.add_event("ui", response.message, "warning")
+            return response
+        response.accepted = True
+        response.message = "inventory requested"
+        self.run_soon(self.inventory_worker, reason)
+        return response
+
+    def inventory_worker(self, reason: str):
+        self.inventory_in_progress = True
+        try:
+            self.set_state("CHECKING_AFTER_CLOSE")
+            if not self.vision_client.wait_for_server(timeout_sec=0.5):
+                if bool(self.get_parameter("simulate_missing_vision").value):
+                    self.add_event("inventory", "vision_node offline; using mock inventory result", "info")
+                    self.apply_mock_inventory(reason)
+                    self.set_state(self._prev_auth_state())
+                    self.publish_ui_summary()
+                    return
+                self.add_event("盘点", "vision_node 未上线，无法盘点", "warning")
+                self.set_state("ALARM_ACTIVE")
+                return
+
+            goal = RunInventory.Goal()
+            goal.reason = reason
+            goal.save_image = True
+            future = self.vision_client.send_goal_async(goal)
+            goal_handle = self.wait_for_future(future, 2.0)
+            if goal_handle is None or not goal_handle.accepted:
+                self.add_event("盘点", "视觉盘点请求被拒绝", "warning")
+                self.set_state("ALARM_ACTIVE")
+                return
+
+            result_future = goal_handle.get_result_async()
+            result_msg = self.wait_for_future(result_future, 20.0)
+            if result_msg is None:
+                self.add_event("盘点", "视觉盘点超时", "warning")
+                self.set_state("ALARM_ACTIVE")
+                return
+
+            result = result_msg.result
+            self.last_inventory = {
+                "success": result.success,
+                "image_path": result.image_path,
+                "is_normal": result.is_normal,
+                "zones": json.loads(result.zones_json or "[]"),
+                "detections": json.loads(result.detections_json or "[]"),
+                "message": result.message,
+                "timestamp": now_iso(),
+            }
+            self.record_inventory_result(self.last_inventory)
+            self.publish_ui_inventory()
+            if result.success and result.is_normal:
+                self.add_event("盘点", "盘点正常", "info")
+                self.set_state(self._prev_auth_state())
+                self.publish_ui_summary()
+            else:
+                self.add_event("盘点", f"盘点异常: {result.message}", "warning")
+                self.call_beep()
+                self.set_state("ALARM_ACTIVE")
+        finally:
+            self.inventory_in_progress = False
 
     def call_beep(self):
         if not self.beep_client.wait_for_service(timeout_sec=0.5):

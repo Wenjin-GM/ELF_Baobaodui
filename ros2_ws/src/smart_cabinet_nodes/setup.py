@@ -29,6 +29,7 @@ setup(
             "console_monitor = smart_cabinet_nodes.console_monitor:main",
             "scenario_player = smart_cabinet_nodes.scenario_player:main",
             "battery_node = smart_cabinet_nodes.battery_node:main",
+            "vision_node = smart_cabinet_nodes.vision_node:main",
         ],
     },
 )

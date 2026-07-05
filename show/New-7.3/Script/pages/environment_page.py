@@ -295,6 +295,12 @@ class EnvironmentPage(QWidget):
         """初始化信号连接"""
         self.backend.env_updated.connect(self._on_env_updated)
 
+    def _as_float(self, value, default=0.0):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
     @pyqtSlot(dict)
     def _on_env_updated(self, data):
         """环境数据更新"""
@@ -335,8 +341,8 @@ class EnvironmentPage(QWidget):
             self.alarm_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #5C635D;")
 
         # 记录历史数据
-        self.temp_history.append(data['temperature'])
-        self.humidity_history.append(data['humidity'])
+        self.temp_history.append(self._as_float(data.get('temperature'), 0.0))
+        self.humidity_history.append(self._as_float(data.get('humidity'), 0.0))
 
         # 更新趋势（简化版：计算最近10个点的平均变化）
         if len(self.temp_history) >= 10:

@@ -34,7 +34,7 @@ stop_pid_file() {
 }
 
 if [[ -d "$PID_DIR" ]]; then
-  for name in ui_node cabinet_logic_node face_node nfc_node actuator_node env_node battery_node; do
+  for name in ui_node cabinet_logic_node face_node nfc_node actuator_node env_node battery_node vision_node; do
     stop_pid_file "$PID_DIR/${name}.pid"
   done
 fi
@@ -47,6 +47,7 @@ pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/nfc_node' 2>/dev/null || 
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/actuator_node' 2>/dev/null || true
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/env_node' 2>/dev/null || true
 pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/battery_node' 2>/dev/null || true
+pkill -f '/smart_cabinet_nodes/lib/smart_cabinet_nodes/vision_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes ui_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes cabinet_logic_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes face_node' 2>/dev/null || true
@@ -54,6 +55,7 @@ pkill -f 'ros2 run smart_cabinet_nodes nfc_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes actuator_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes env_node' 2>/dev/null || true
 pkill -f 'ros2 run smart_cabinet_nodes battery_node' 2>/dev/null || true
+pkill -f 'ros2 run smart_cabinet_nodes vision_node' 2>/dev/null || true
 
 # Keep the active-high buzzer quiet after actuator shutdown.
 if command -v gpioset >/dev/null 2>&1; then

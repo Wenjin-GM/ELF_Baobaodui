@@ -9,7 +9,7 @@
 import os
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QFrame, QPushButton, QGridLayout)
+                             QFrame, QPushButton, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QFont, QImage, QPixmap
 from ui_theme import ACTION_BUTTON_HEIGHT, CARD_MARGIN, CARD_SPACING, PAGE_MARGIN, PAGE_SPACING
@@ -23,6 +23,7 @@ class AuthPage(QWidget):
         self.state_machine = state_machine
         self.backend = backend
         self.camera_label = None
+        self._last_preview_image = None
 
         self._init_ui()
         self._init_connections()
@@ -43,19 +44,20 @@ class AuthPage(QWidget):
             }
         """)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setAlignment(Qt.AlignCenter)
-        left_layout.setContentsMargins(CARD_MARGIN, CARD_MARGIN, CARD_MARGIN, CARD_MARGIN)
-        left_layout.setSpacing(CARD_SPACING)
+        left_layout.setContentsMargins(8, 8, 8, 8)
+        left_layout.setSpacing(0)
 
         camera_placeholder = QLabel("摄像头预览区")
+        camera_placeholder.hide()
         camera_placeholder.setStyleSheet("font-size: 20px; color: #FFFFFF;")
         left_layout.addWidget(camera_placeholder, alignment=Qt.AlignCenter)
 
         self.camera_label = QLabel("camera preview")
         self.camera_label.setAlignment(Qt.AlignCenter)
-        self.camera_label.setMinimumSize(400, 260)
-        self.camera_label.setStyleSheet("font-size: 20px; color: #FFFFFF;")
-        left_layout.addWidget(self.camera_label, alignment=Qt.AlignCenter)
+        self.camera_label.setMinimumSize(0, 0)
+        self.camera_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.camera_label.setStyleSheet("font-size: 20px; color: #FFFFFF; background-color: #000000;")
+        left_layout.addWidget(self.camera_label, 1)
 
         layout.addWidget(left_panel, 2)
 
@@ -199,12 +201,27 @@ class AuthPage(QWidget):
     def _on_preview_frame(self, qimg):
         """Receive frame from /face/preview (QImage), convert to QPixmap in GUI thread."""
         if self.camera_label is not None and qimg is not None and not qimg.isNull():
-            pixmap = QPixmap.fromImage(qimg).scaled(
-                self.camera_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-            self.camera_label.setPixmap(pixmap)
+            self._last_preview_image = qimg
+            self._render_preview_frame()
+
+    def _render_preview_frame(self):
+        if self.camera_label is None or self._last_preview_image is None:
+            return
+        if self._last_preview_image.isNull():
+            return
+        target_size = self.camera_label.contentsRect().size()
+        if target_size.width() <= 0 or target_size.height() <= 0:
+            return
+        pixmap = QPixmap.fromImage(self._last_preview_image).scaled(
+            target_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self.camera_label.setPixmap(pixmap)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._render_preview_frame()
 
     def closeEvent(self, event):
         super().closeEvent(event)

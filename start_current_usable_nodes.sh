@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Start the currently usable real nodes for hands-on cabinet validation.
-# Real: SHT30 env, PN532 NFC, GPIO actuator, face preview/auth, STM32 PB0 battery, cabinet logic, PyQt UI.
-# Mocked inside cabinet_logic_node: cabinet inventory vision (vision_node not online yet).
+# Real: SHT30 env, PN532 NFC, GPIO actuator, face preview/auth, STM32 PB0/PB1 battery, cabinet logic, PyQt UI.
+# Optional: cabinet inventory vision (disabled by default until zones.json is calibrated).
 # Current wiring: SHT30 on i2c-4, PN532 on i2c-7 addr 0x24.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +40,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 UI_MODE="${SMART_CABINET_UI_MODE:-fullscreen}"  # fullscreen | windowed | bridge | none
 START_NFC="${SMART_CABINET_START_NFC:-1}"
+START_VISION="${SMART_CABINET_START_VISION:-0}"
 FOREGROUND="${SMART_CABINET_FOREGROUND:-1}"
 
 start_node() {
@@ -74,17 +75,18 @@ start_node actuator_node \
   ros2 run smart_cabinet_nodes actuator_node \
   --ros-args -p dry_run:=false
 
-# battery_node reads STM32 PB0 presence via gpiochip3 line 7 (poll mode).
+# battery_node reads STM32 PB0/PB1 gated four-bit presence.
 start_node battery_node \
   ros2 run smart_cabinet_nodes battery_node \
   --ros-args \
-  -p chip:=gpiochip3 \
-  -p line:=7 \
+  -p protocol:=gated \
+  -p data_chip:=gpiochip3 \
+  -p data_line:=7 \
+  -p frame_chip:=gpiochip3 \
+  -p frame_line:=1 \
   -p confirm_frames:=2 \
-  -p timeout_sec:=25.0 \
-  -p period_sec:=3.0 \
-  -p poll_mode:=true \
-  -p poll_interval_sec:=0.0
+  -p timeout_sec:=8.0 \
+  -p period_sec:=3.0
 
 if [[ "$START_NFC" == "1" || "$START_NFC" == "true" || "$START_NFC" == "yes" || "$START_NFC" == "on" ]]; then
   start_node nfc_node \
@@ -101,10 +103,24 @@ start_node face_node \
   ros2 run smart_cabinet_nodes face_node \
   --ros-args -p dry_run:=false -p camera:=/dev/video21
 
+if [[ "$START_VISION" == "1" || "$START_VISION" == "true" || "$START_VISION" == "yes" || "$START_VISION" == "on" ]]; then
+  start_node vision_node \
+    ros2 run smart_cabinet_nodes vision_node \
+    --ros-args \
+    -p dry_run:=false \
+    -p device:=/dev/video11 \
+    -p model:="$PROJECT_ROOT/vision/best.pt" \
+    -p zones:="$PROJECT_ROOT/vision/inventory/zones.json"
+  SIMULATE_MISSING_VISION=false
+else
+  SIMULATE_MISSING_VISION=true
+fi
+
 start_node cabinet_logic_node \
   ros2 run smart_cabinet_nodes cabinet_logic_node \
   --ros-args \
   -p simulate_missing_battery:=false \
+  -p simulate_missing_vision:="$SIMULATE_MISSING_VISION" \
   -p exclusive_i2c4_auth_mode:=false \
   -p nfc_server_wait_sec:=1.0
 
@@ -138,9 +154,10 @@ echo "  ros2 topic echo /ui/summary --once"
 echo "  ros2 topic info /face/preview"
 echo "  ros2 action list | grep read_nfc_card"
 echo
-echo "battery_node is started by default (STM32 PB0 via gpiochip3 line 7)."
+echo "battery_node is started by default (STM32 PB0/PB1 gated: DATA gpiochip3 line 7, FRAME_ACTIVE gpiochip3 line 1)."
 echo "nfc_node is started by default (PN532 via i2c-7 addr 0x24)."
 echo "SHT30 uses i2c-4."
+echo "vision_node is optional: set SMART_CABINET_START_VISION=1 after calibrating vision/inventory/zones.json."
 echo
 echo "NFC cards:"
 echo "  19C78529 -> User / user"
