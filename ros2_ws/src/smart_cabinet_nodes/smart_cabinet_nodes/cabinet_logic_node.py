@@ -499,9 +499,14 @@ class CabinetLogicNode(Node):
             self.set_state(self._prev_auth_state())
             self.publish_ui_summary()
         else:
-            self.add_event("盘点", f"盘点异常: {result.message}", "warning")
-            self.call_beep()
-            self.set_state("ALARM_ACTIVE")
+            if self._inventory_has_misplaced(self.last_inventory):
+                self.add_event("盘点", f"盘点错放: {result.message}", "warning")
+                self.call_beep()
+                self.set_state("ALARM_ACTIVE")
+            else:
+                self.add_event("盘点", f"盘点借出: {result.message}", "info")
+                self.set_state(self._prev_auth_state())
+                self.publish_ui_summary()
 
     # Keep these definitions after the original inventory methods so this
     # runtime-safe implementation is the one bound on the class.
@@ -577,11 +582,26 @@ class CabinetLogicNode(Node):
                 self.set_state(self._prev_auth_state())
                 self.publish_ui_summary()
             else:
-                self.add_event("盘点", f"盘点异常: {result.message}", "warning")
-                self.call_beep()
-                self.set_state("ALARM_ACTIVE")
+                if self._inventory_has_misplaced(self.last_inventory):
+                    self.add_event("盘点", f"盘点错放: {result.message}", "warning")
+                    self.call_beep()
+                    self.set_state("ALARM_ACTIVE")
+                else:
+                    self.add_event("盘点", f"盘点借出: {result.message}", "info")
+                    self.set_state(self._prev_auth_state())
+                    self.publish_ui_summary()
         finally:
             self.inventory_in_progress = False
+
+    def _inventory_has_misplaced(self, inventory: Dict[str, Any]) -> bool:
+        misplaced_values = {"misplaced", "错放"}
+        for zone in inventory.get("zones", []) or []:
+            if str(zone.get("status", "")).strip().lower() in misplaced_values:
+                return True
+        for det in inventory.get("detections", []) or []:
+            if str(det.get("placement", "")).strip().lower() in misplaced_values:
+                return True
+        return False
 
     def call_beep(self):
         if not self.beep_client.wait_for_service(timeout_sec=0.5):

@@ -177,13 +177,13 @@ class EnvironmentPage(QWidget):
 
         self.btn_fan_auto = QPushButton("自动控制风扇")
         self.btn_fan_auto.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_fan_auto.setStyleSheet(self._get_button_style())
+        self.btn_fan_auto.setStyleSheet(self._get_button_style("#C4612F", "#FFFFFF"))
         self.btn_fan_auto.clicked.connect(self._fan_auto)
         fan_buttons_layout.addWidget(self.btn_fan_auto)
 
         self.btn_fan_on = QPushButton("手动开启风扇")
         self.btn_fan_on.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        self.btn_fan_on.setStyleSheet(self._get_button_style("#C4612F", "#FFFFFF"))
+        self.btn_fan_on.setStyleSheet(self._get_button_style())
         self.btn_fan_on.clicked.connect(self._fan_on)
         fan_buttons_layout.addWidget(self.btn_fan_on)
 
@@ -308,6 +308,16 @@ class EnvironmentPage(QWidget):
             }}
         """
 
+    def _set_fan_button_mode(self, mode: str, fan_on: bool = False):
+        """Highlight exactly one fan control button."""
+        active = "auto" if mode == "auto" else "manual_on" if fan_on else "manual_off"
+        active_style = self._get_button_style("#C4612F", "#FFFFFF")
+        inactive_style = self._get_button_style()
+
+        self.btn_fan_auto.setStyleSheet(active_style if active == "auto" else inactive_style)
+        self.btn_fan_on.setStyleSheet(active_style if active == "manual_on" else inactive_style)
+        self.btn_fan_off.setStyleSheet(active_style if active == "manual_off" else inactive_style)
+
     def _init_connections(self):
         """初始化信号连接"""
         self.backend.env_updated.connect(self._on_env_updated)
@@ -339,8 +349,10 @@ class EnvironmentPage(QWidget):
 
         # 风扇状态
         fan_mode = str(data.get('fan_mode', 'auto'))
+        fan_on = bool(data.get('fan_on'))
         mode_text = "自动" if fan_mode == "auto" else "手动"
-        if data.get('fan_on'):
+        self._set_fan_button_mode(fan_mode, fan_on)
+        if fan_on:
             self.fan_status_label.setText("开启")
             self.fan_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #C4612F;")
             self.fan_purpose_label.setText(f"模式: {mode_text} / 用途: {data.get('fan_purpose', '运行')}")
@@ -372,17 +384,20 @@ class EnvironmentPage(QWidget):
     def _fan_on(self):
         """手动开启风扇"""
         print("[EnvironmentPage] 手动开启风扇")
+        self._set_fan_button_mode("manual", True)
         if hasattr(self.backend, "request_manual_fan"):
             self.backend.request_manual_fan(True, "ui_button")
 
     def _fan_off(self):
         """手动关闭风扇"""
         print("[EnvironmentPage] 手动关闭风扇")
+        self._set_fan_button_mode("manual", False)
         if hasattr(self.backend, "request_manual_fan"):
             self.backend.request_manual_fan(False, "ui_button")
 
     def _fan_auto(self):
         """恢复自动风扇控制"""
         print("[EnvironmentPage] 自动控制风扇")
+        self._set_fan_button_mode("auto")
         if hasattr(self.backend, "request_auto_fan"):
             self.backend.request_auto_fan("auto_control")
