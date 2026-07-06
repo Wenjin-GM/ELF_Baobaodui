@@ -58,6 +58,7 @@ class CabinetLogicNode(Node):
         self.last_inventory_image: str = ""
         self.last_auth: Dict[str, Any] = {}
         self.fan_auto_on = False
+        self.fan_control_mode = "auto"
         self.summary_seq = 0
         self.mock_battery_tick = 0
         self.mock_inventory_tick = 0
@@ -209,6 +210,9 @@ class CabinetLogicNode(Node):
         humidity_off = float(self.get_parameter("humidity_off").value)
         temp_on = float(self.get_parameter("temp_on").value)
         temp_off = float(self.get_parameter("temp_off").value)
+
+        if self.fan_control_mode != "auto":
+            return
 
         if not self.fan_auto_on and (humidity > humidity_on or temp > temp_on):
             self.call_set_fan(True, "auto_env_control")
@@ -595,10 +599,22 @@ class CabinetLogicNode(Node):
             self.add_event("ui", response.message, "warning")
             return response
         on = bool(request.on)
+        reason = request.reason or "manual"
+        if reason in {"auto", "auto_control", "ui_auto"}:
+            self.fan_control_mode = "auto"
+            self.fan_auto_on = bool(self.last_actuator.get("fan_on", self.fan_auto_on))
+            self.add_event("ui", "fan control mode set to auto", "info")
+            self.handle_env_control()
+            self.publish_ui_environment()
+            response.accepted = True
+            response.message = "fan auto control enabled"
+            return response
+
+        self.fan_control_mode = "manual"
         self.call_set_fan(on, request.reason or "manual")
         self.add_event("ui", f"request_manual_fan received: {'on' if on else 'off'} ({request.reason or 'manual'})", "info")
         # immediately reflect expected state so UI button updates without waiting for actuator round-trip
-        self.fan_auto_on = False
+        self.fan_auto_on = on
         self.last_actuator = dict(self.last_actuator, fan_on=on)
         self.publish_ui_environment()
         response.accepted = True
@@ -692,6 +708,7 @@ class CabinetLogicNode(Node):
             "humidity": self.last_env.get("humidity"),
             "valid": self.last_env.get("valid", False),
             "fan_on": self.last_actuator.get("fan_on", self.fan_auto_on),
+            "fan_mode": self.fan_control_mode,
             "alarm_on": self.state == "ALARM_ACTIVE",
             "humidity_on": float(self.get_parameter("humidity_on").value),
             "humidity_off": float(self.get_parameter("humidity_off").value),

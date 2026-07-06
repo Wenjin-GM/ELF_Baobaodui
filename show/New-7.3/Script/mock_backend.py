@@ -40,6 +40,7 @@ class MockBackend(QObject):
         self.current_temp = 25.0
         self.current_humidity = 50.0
         self.fan_on = False
+        self.fan_mode = "auto"
 
         self.battery_slots = [True, False, True, True]
         self.relay_on = False
@@ -74,16 +75,18 @@ class MockBackend(QObject):
         self.current_humidity = max(45.0, min(65.0, self.current_humidity))
 
         # 湿度 > 55% 时自动开风扇
-        if self.current_humidity > 55.0 and not self.fan_on:
-            self.fan_on = True
-        elif self.current_humidity <= 50.0 and self.fan_on:
-            self.fan_on = False
+        if self.fan_mode == "auto":
+            if self.current_humidity > 55.0 and not self.fan_on:
+                self.fan_on = True
+            elif self.current_humidity <= 50.0 and self.fan_on:
+                self.fan_on = False
 
         env_data = {
             "temperature": round(self.current_temp, 1),
             "humidity": round(self.current_humidity, 1),
             "fan_on": self.fan_on,
-            "fan_purpose": "除湿" if self.fan_on else "待机",
+            "fan_purpose": "自动" if self.fan_mode == "auto" and self.fan_on else "手动" if self.fan_mode == "manual" and self.fan_on else "待机",
+            "fan_mode": self.fan_mode,
             "alarm_on": False,
             "timestamp": datetime.now().isoformat()
         }
@@ -201,12 +204,14 @@ class MockBackend(QObject):
 
     def request_manual_fan(self, on: bool, reason: str = "ui_button"):
         """模拟手动风扇控制"""
+        self.fan_mode = "manual"
         self.fan_on = bool(on)
         self.env_updated.emit({
             "temperature": round(self.current_temp, 1),
             "humidity": round(self.current_humidity, 1),
             "fan_on": self.fan_on,
             "fan_purpose": "手动" if self.fan_on else "待机",
+            "fan_mode": self.fan_mode,
             "alarm_on": False,
             "timestamp": datetime.now().isoformat()
         })
@@ -217,6 +222,11 @@ class MockBackend(QObject):
             "timestamp": datetime.now().isoformat()
         }
         self.event_added.emit(event)
+
+    def request_auto_fan(self, reason: str = "auto_control"):
+        """模拟自动风扇控制"""
+        self.fan_mode = "auto"
+        self._update_env_data()
 
     def simulate_auth_failed(self):
         """模拟认证失败"""

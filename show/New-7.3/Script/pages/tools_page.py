@@ -185,6 +185,9 @@ class ToolsPage(QWidget):
     def _trigger_check(self):
         """触发盘点"""
         self.status_label.setText("盘点中...")
+        window = self.window()
+        if hasattr(window, "keep_tools_page_for_inventory"):
+            window.keep_tools_page_for_inventory()
         if hasattr(self.backend, "request_inventory"):
             self.backend.request_inventory("ui_button")
         # 模拟后端会自动更新数据

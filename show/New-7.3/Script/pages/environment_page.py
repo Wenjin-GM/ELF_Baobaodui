@@ -171,9 +171,15 @@ class EnvironmentPage(QWidget):
         alarm_layout.addStretch()
         layout.addLayout(alarm_layout)
 
-        # 手动控制按钮
+        # 风扇控制按钮
         fan_buttons_layout = QHBoxLayout()
         fan_buttons_layout.setSpacing(12)
+
+        self.btn_fan_auto = QPushButton("自动控制风扇")
+        self.btn_fan_auto.setFixedHeight(ACTION_BUTTON_HEIGHT)
+        self.btn_fan_auto.setStyleSheet(self._get_button_style())
+        self.btn_fan_auto.clicked.connect(self._fan_auto)
+        fan_buttons_layout.addWidget(self.btn_fan_auto)
 
         self.btn_fan_on = QPushButton("手动开启风扇")
         self.btn_fan_on.setFixedHeight(ACTION_BUTTON_HEIGHT)
@@ -332,14 +338,16 @@ class EnvironmentPage(QWidget):
         self._fan_trigger_label.setText(f"湿度 > {h_on}% 或 温度 > {t_on}℃")
 
         # 风扇状态
+        fan_mode = str(data.get('fan_mode', 'auto'))
+        mode_text = "自动" if fan_mode == "auto" else "手动"
         if data.get('fan_on'):
             self.fan_status_label.setText("开启")
             self.fan_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #C4612F;")
-            self.fan_purpose_label.setText(f"用途: {data.get('fan_purpose', '运行')}")
+            self.fan_purpose_label.setText(f"模式: {mode_text} / 用途: {data.get('fan_purpose', '运行')}")
         else:
             self.fan_status_label.setText("关闭")
             self.fan_status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #5C635D;")
-            self.fan_purpose_label.setText("用途: 待机")
+            self.fan_purpose_label.setText(f"模式: {mode_text} / 用途: 待机")
 
         # 报警器状态
         if data.get('alarm_on'):
@@ -372,3 +380,9 @@ class EnvironmentPage(QWidget):
         print("[EnvironmentPage] 手动关闭风扇")
         if hasattr(self.backend, "request_manual_fan"):
             self.backend.request_manual_fan(False, "ui_button")
+
+    def _fan_auto(self):
+        """恢复自动风扇控制"""
+        print("[EnvironmentPage] 自动控制风扇")
+        if hasattr(self.backend, "request_auto_fan"):
+            self.backend.request_auto_fan("auto_control")

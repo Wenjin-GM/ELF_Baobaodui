@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         # 滑动手势相关
         self.drag_start_pos = None
         self.is_dragging = False
+        self._keep_tools_page_for_inventory = False
 
         # 初始化UI
         self._init_ui()
@@ -328,6 +329,10 @@ class MainWindow(QMainWindow):
             self._highlight_current_page()
             print(f"[MainWindow] 切换到页面: {page_type.value}")
 
+    def keep_tools_page_for_inventory(self):
+        """Keep the Tools page visible for a manual inventory request."""
+        self._keep_tools_page_for_inventory = True
+
     def _on_state_changed(self, old_state: SystemState, new_state: SystemState):
         """状态变化处理"""
         print(f"[MainWindow] 状态变化: {old_state.value} -> {new_state.value}")
@@ -392,10 +397,23 @@ class MainWindow(QMainWindow):
                 self.state_machine.current_state == SystemState.CHECKING_AFTER_CLOSE
                 and new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED)
             )
+            if (
+                self._keep_tools_page_for_inventory
+                and self.stacked_widget.currentWidget() == self.pages.get(PageType.TOOLS)
+                and new_state in (
+                    SystemState.CHECKING_AFTER_CLOSE,
+                    SystemState.USER_AUTHED,
+                    SystemState.ADMIN_AUTHED,
+                    SystemState.ALARM_ACTIVE,
+                )
+            ):
+                auto_page = False
             self.state_machine.transition_to(new_state, auto_switch_page=auto_page)
         else:
             self._on_state_changed(new_state, new_state)
         self._update_navigation()
+        if new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED, SystemState.ALARM_ACTIVE, SystemState.STANDBY):
+            self._keep_tools_page_for_inventory = False
 
     def _update_time_display(self):
         """更新时间显示"""

@@ -109,6 +109,12 @@ class RosBackend(QObject):
         req.reason = reason
         self._call_service(self.fan_client, req, "request_manual_fan")
 
+    def request_auto_fan(self, reason: str = "auto_control"):
+        req = self.RequestManualFan.Request()
+        req.on = False
+        req.reason = reason
+        self._call_service(self.fan_client, req, "request_auto_fan")
+
     def request_temp_unlock(self):
         req = self.RequestTempUnlock.Request()
         self._call_service(self.temp_unlock_client, req, "request_temp_unlock")
@@ -205,6 +211,7 @@ class RosBackend(QObject):
                 "humidity": data.get("humidity") if data.get("humidity") is not None else "--",
                 "fan_on": self.fan_on,
                 "fan_purpose": "auto/manual" if self.fan_on else "standby",
+                "fan_mode": data.get("fan_mode", "auto"),
                 "alarm_on": bool(data.get("alarm_on", False)),
                 "humidity_on": data.get("humidity_on", 55),
                 "humidity_off": data.get("humidity_off", 50),
