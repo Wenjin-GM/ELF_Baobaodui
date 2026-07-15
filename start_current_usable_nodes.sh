@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Start the currently usable real nodes for hands-on cabinet validation.
 # Real: SHT30 env, PN532 NFC, GPIO actuator, face preview/auth, STM32 PB0/PB1 battery, cabinet logic, PyQt UI.
-# Optional: cabinet inventory vision (disabled by default until zones.json is calibrated).
+# Cabinet inventory vision is enabled by default after zones.json calibration.
 # Current wiring: SHT30 on i2c-4, PN532 on i2c-7 addr 0x24.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,7 +40,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 UI_MODE="${SMART_CABINET_UI_MODE:-fullscreen}"  # fullscreen | windowed | bridge | none
 START_NFC="${SMART_CABINET_START_NFC:-1}"
-START_VISION="${SMART_CABINET_START_VISION:-0}"
+START_VISION="${SMART_CABINET_START_VISION:-1}"
 FOREGROUND="${SMART_CABINET_FOREGROUND:-1}"
 
 start_node() {
@@ -109,7 +109,7 @@ if [[ "$START_VISION" == "1" || "$START_VISION" == "true" || "$START_VISION" == 
     --ros-args \
     -p dry_run:=false \
     -p device:=/dev/video11 \
-    -p model:="$PROJECT_ROOT/vision/best.pt" \
+    -p model:="$PROJECT_ROOT/vision/inventory/best_stable_20mb.pt" \
     -p zones:="$PROJECT_ROOT/vision/inventory/zones.json"
   SIMULATE_MISSING_VISION=false
 else
@@ -157,7 +157,7 @@ echo
 echo "battery_node is started by default (STM32 PB0/PB1 gated: DATA gpiochip3 line 7, FRAME_ACTIVE gpiochip3 line 1)."
 echo "nfc_node is started by default (PN532 via i2c-7 addr 0x24)."
 echo "SHT30 uses i2c-4."
-echo "vision_node is optional: set SMART_CABINET_START_VISION=1 after calibrating vision/inventory/zones.json."
+echo "vision_node is started by default (set SMART_CABINET_START_VISION=0 only when the cabinet camera is unavailable)."
 echo
 echo "NFC cards:"
 echo "  19C78529 -> User / user"

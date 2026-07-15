@@ -42,6 +42,14 @@ DEFAULT_MISPLACED_MIN_CONFIDENCE: Dict[str, float] = {
     "multimeter": 0.10,
 }
 
+CLASS_ALIASES: Dict[str, str] = {
+    "pliers": "vise",
+    "temperature gun": "thermometer",
+    "temperature_gun": "thermometer",
+    "insulating glove": "insulating gloves",
+    "insulating_glove": "insulating gloves",
+}
+
 
 @dataclass
 class Detection:
@@ -68,7 +76,8 @@ class Detection:
 
 
 def normalize_class_name(name: str) -> str:
-    return re.sub(r"\s+", " ", str(name).strip().lower().replace("_", " "))
+    text = re.sub(r"\s+", " ", str(name).strip().lower().replace("_", " "))
+    return CLASS_ALIASES.get(text, text)
 
 
 def safe_name(name: str) -> str:
