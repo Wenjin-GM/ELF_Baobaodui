@@ -44,6 +44,7 @@ class MockBackend(QObject):
 
         self.battery_slots = [True, False, True, True]
         self.relay_on = False
+        self.latest_charging_data = None
 
     def start(self):
         """启动模拟后端"""
@@ -178,6 +179,7 @@ class MockBackend(QObject):
             "timestamp": datetime.now().isoformat()
         }
 
+        self.latest_charging_data = charging_data
         self.charging_updated.emit(charging_data)
 
     def simulate_auth_success(self, user_name: str = "赵增辉", role: str = "admin"):

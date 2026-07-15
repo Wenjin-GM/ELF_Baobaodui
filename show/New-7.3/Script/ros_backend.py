@@ -52,6 +52,7 @@ class RosBackend(QObject):
         self._spin_thread: threading.Thread | None = None
         self._running = False
         self.fan_on = False
+        self.latest_charging_data: Dict[str, Any] | None = None
         self._last_tool_event_key = ""
 
         qos = QoSProfile(
@@ -253,16 +254,16 @@ class RosBackend(QObject):
     def _on_battery(self, msg):
         data = self._loads(msg.data)
         slots = data.get("slots") or [False, False, False, False]
-        self.charging_updated.emit(
-            {
-                "module_online": bool(data.get("module_online", False)),
-                "status_valid": bool(data.get("status_valid", False)),
-                "box_present": bool(data.get("box_present", any(slots))),
-                "relay_on": bool(data.get("relay_on", False)),
-                "slots": [bool(item) for item in slots[:4]],
-                "timestamp": data.get("timestamp", ""),
-            }
-        )
+        charging_data = {
+            "module_online": bool(data.get("module_online", False)),
+            "status_valid": bool(data.get("status_valid", False)),
+            "box_present": bool(data.get("box_present", any(slots))),
+            "relay_on": bool(data.get("relay_on", False)),
+            "slots": [bool(item) for item in slots[:4]],
+            "timestamp": data.get("timestamp", ""),
+        }
+        self.latest_charging_data = charging_data
+        self.charging_updated.emit(charging_data)
 
     def _on_auth(self, msg):
         self.auth_updated.emit(self._normalize_auth(self._loads(msg.data)))

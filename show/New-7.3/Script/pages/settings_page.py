@@ -9,9 +9,10 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QPushButton, QGridLayout, QLineEdit,
                              QCheckBox, QSpinBox, QMessageBox)
-from PyQt5.QtCore import Qt, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont
 from ui_theme import ACTION_BUTTON_HEIGHT, CARD_MARGIN, PAGE_MARGIN, PAGE_SPACING
+import time
 
 
 class SettingsPage(QWidget):
@@ -21,8 +22,12 @@ class SettingsPage(QWidget):
         super().__init__()
         self.state_machine = state_machine
         self.backend = backend
+        self._syncing_thresholds = False
+        self._last_sent_thresholds = None
+        self._ignore_threshold_echo_until = 0.0
 
         self._init_ui()
+        self._init_connections()
 
     def _init_ui(self):
         """初始化UI"""
@@ -55,7 +60,7 @@ class SettingsPage(QWidget):
         layout.addStretch()
 
     def _create_env_settings_card(self) -> QFrame:
-        """创建环境阈值设置卡片 — 4 个真实阈值"""
+        """创建环境阈值设置卡片"""
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
@@ -76,55 +81,34 @@ class SettingsPage(QWidget):
 
         # 阈值输入
         settings_layout = QGridLayout()
-        settings_layout.setSpacing(10)
+        settings_layout.setHorizontalSpacing(18)
+        settings_layout.setVerticalSpacing(18)
 
         # 风扇开启温度  (temp_on)
         label = QLabel("风扇开启温度 (℃):")
-        label.setStyleSheet("font-size: 14px; color: #1F2421;")
+        label.setStyleSheet("font-size: 17px; font-weight: bold; color: #1F2421;")
         settings_layout.addWidget(label, 0, 0)
 
         self.temp_on_spin = QSpinBox()
         self.temp_on_spin.setRange(0, 60)
         self.temp_on_spin.setValue(35)
         self.temp_on_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.temp_on_spin.setStyleSheet("font-size: 14px; padding: 4px;")
+        self.temp_on_spin.setSuffix(" ℃")
+        self.temp_on_spin.setStyleSheet("font-size: 18px; padding: 6px 10px;")
         settings_layout.addWidget(self.temp_on_spin, 0, 1)
-
-        # 风扇关闭温度  (temp_off)
-        label = QLabel("风扇关闭温度 (℃):")
-        label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(label, 1, 0)
-
-        self.temp_off_spin = QSpinBox()
-        self.temp_off_spin.setRange(0, 55)
-        self.temp_off_spin.setValue(30)
-        self.temp_off_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.temp_off_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.temp_off_spin, 1, 1)
 
         # 风扇开启湿度  (humidity_on)
         label = QLabel("风扇开启湿度 (%RH):")
-        label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(label, 2, 0)
+        label.setStyleSheet("font-size: 17px; font-weight: bold; color: #1F2421;")
+        settings_layout.addWidget(label, 1, 0)
 
         self.humidity_on_spin = QSpinBox()
         self.humidity_on_spin.setRange(0, 100)
         self.humidity_on_spin.setValue(55)
         self.humidity_on_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.humidity_on_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.humidity_on_spin, 2, 1)
-
-        # 风扇关闭湿度  (humidity_off)
-        label = QLabel("风扇关闭湿度 (%RH):")
-        label.setStyleSheet("font-size: 14px; color: #1F2421;")
-        settings_layout.addWidget(label, 3, 0)
-
-        self.humidity_off_spin = QSpinBox()
-        self.humidity_off_spin.setRange(0, 100)
-        self.humidity_off_spin.setValue(50)
-        self.humidity_off_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.humidity_off_spin.setStyleSheet("font-size: 14px; padding: 4px;")
-        settings_layout.addWidget(self.humidity_off_spin, 3, 1)
+        self.humidity_on_spin.setSuffix(" %RH")
+        self.humidity_on_spin.setStyleSheet("font-size: 18px; padding: 6px 10px;")
+        settings_layout.addWidget(self.humidity_on_spin, 1, 1)
 
         layout.addLayout(settings_layout)
 
@@ -136,6 +120,21 @@ class SettingsPage(QWidget):
         layout.addWidget(btn_save)
 
         return card
+
+    def _init_connections(self):
+        self.threshold_update_timer = QTimer(self)
+        self.threshold_update_timer.setSingleShot(True)
+        self.threshold_update_timer.setInterval(900)
+        self.threshold_update_timer.timeout.connect(self._on_threshold_update_idle)
+
+        for spin in (
+            self.temp_on_spin,
+            self.humidity_on_spin,
+        ):
+            spin.valueChanged.connect(self._schedule_env_threshold_update)
+
+        if hasattr(self.backend, "env_updated"):
+            self.backend.env_updated.connect(self._on_env_updated)
 
     def _create_control_card(self) -> QFrame:
         """创建系统控制卡片"""
@@ -198,12 +197,6 @@ class SettingsPage(QWidget):
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(12)
 
-        btn_temp_unlock = QPushButton("临时开锁")
-        btn_temp_unlock.setFixedHeight(ACTION_BUTTON_HEIGHT)
-        btn_temp_unlock.setStyleSheet(self._get_danger_button_style())
-        btn_temp_unlock.clicked.connect(self._temp_unlock)
-        buttons_layout.addWidget(btn_temp_unlock)
-
         btn_clear_records = QPushButton("清空所有记录")
         btn_clear_records.setFixedHeight(ACTION_BUTTON_HEIGHT)
         btn_clear_records.setStyleSheet(self._get_danger_button_style())
@@ -259,41 +252,92 @@ class SettingsPage(QWidget):
             }
         """
 
-    def _save_env_settings(self):
+    def _current_thresholds(self):
+        return {
+            "humidity_on": self.humidity_on_spin.value(),
+            "humidity_off": self.humidity_on_spin.value(),
+            "temp_on": self.temp_on_spin.value(),
+            "temp_off": self.temp_on_spin.value(),
+        }
+
+    def _schedule_env_threshold_update(self):
+        if self._syncing_thresholds:
+            return
+        self._ignore_threshold_echo_until = time.monotonic() + 3.0
+        self.threshold_update_timer.start()
+
+    def _on_threshold_update_idle(self):
+        self._ignore_threshold_echo_until = time.monotonic() + 3.0
+        self._save_env_settings(show_message=False)
+
+    @pyqtSlot(dict)
+    def _on_env_updated(self, data):
+        if not data:
+            return
+        keys = ("humidity_on", "humidity_off", "temp_on", "temp_off")
+        if not any(key in data for key in keys):
+            return
+        if self.threshold_update_timer.isActive() or time.monotonic() < self._ignore_threshold_echo_until:
+            return
+
+        values = {
+            "humidity_on": int(round(float(data.get("humidity_on", self.humidity_on_spin.value())))),
+            "temp_on": int(round(float(data.get("temp_on", self.temp_on_spin.value())))),
+        }
+        current_visible = {
+            "humidity_on": self.humidity_on_spin.value(),
+            "temp_on": self.temp_on_spin.value(),
+        }
+        if values == current_visible:
+            return
+
+        self._syncing_thresholds = True
+        try:
+            self.humidity_on_spin.setValue(values["humidity_on"])
+            self.temp_on_spin.setValue(values["temp_on"])
+        finally:
+            self._syncing_thresholds = False
+
+    def _save_env_settings(self, show_message=True):
         """保存环境设置——调用 /cabinet/update_env_thresholds service"""
-        h_on = self.humidity_on_spin.value()
-        h_off = self.humidity_off_spin.value()
-        t_on = self.temp_on_spin.value()
-        t_off = self.temp_off_spin.value()
+        thresholds = self._current_thresholds()
+        if thresholds == self._last_sent_thresholds and not show_message:
+            return
+
+        h_on = thresholds["humidity_on"]
+        h_off = thresholds["humidity_off"]
+        t_on = thresholds["temp_on"]
+        t_off = thresholds["temp_off"]
         if hasattr(self.backend, "update_env_thresholds"):
             self.backend.update_env_thresholds(
                 humidity_on=h_on, humidity_off=h_off,
                 temp_on=t_on, temp_off=t_off,
             )
-            QMessageBox.information(self, "设置",
-                f"环境阈值已更新:\n风扇开 {h_on}%RH / 关 {h_off}%RH\n"
-                f"风扇开 {t_on}℃ / 关 {t_off}℃")
+            self._last_sent_thresholds = thresholds
+            self._ignore_threshold_echo_until = time.monotonic() + 3.0
+            if show_message:
+                QMessageBox.information(self, "设置",
+                    f"环境阈值已更新:\n风扇开启湿度 {h_on}%RH\n"
+                    f"风扇开启温度 {t_on}℃")
         else:
-            QMessageBox.warning(self, "设置", "后端不支持在线更新阈值")
-
-    def _temp_unlock(self):
-        """临时开锁"""
-        reply = QMessageBox.warning(self, "危险操作", "确定要临时开锁吗？\n此操作将记录到日志。",
-                                    QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            print("[SettingsPage] 临时开锁")
-            if hasattr(self.backend, "request_temp_unlock"):
-                self.backend.request_temp_unlock()
-            else:
-                self.state_machine.on_cabinet_opened()
-                self.backend.simulate_door_opened()
+            if show_message:
+                QMessageBox.warning(self, "设置", "后端不支持在线更新阈值")
 
     def _clear_all_records(self):
         """清空所有记录"""
-        reply = QMessageBox.critical(self, "危险操作", "确定要清空所有记录吗？\n此操作不可恢复！",
-                                     QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            print("[SettingsPage] 清空所有记录")
+        records_page = None
+        main_window = self.window()
+        for page in getattr(main_window, "pages", {}).values():
+            if hasattr(page, "clear_records"):
+                records_page = page
+                break
+
+        if records_page is None:
+            print("[SettingsPage] 未找到记录页，无法清空记录")
+            return
+
+        records_page.clear_records()
+        print("[SettingsPage] 已清空所有记录")
 
     def _reset_system(self):
         """重置系统"""

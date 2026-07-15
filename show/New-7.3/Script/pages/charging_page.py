@@ -20,9 +20,11 @@ class ChargingPage(QWidget):
         super().__init__()
         self.state_machine = state_machine
         self.backend = backend
+        self._last_charging_data = None
 
         self._init_ui()
         self._init_connections()
+        self._apply_latest_charging_data()
 
     def _init_ui(self):
         """初始化UI"""
@@ -187,9 +189,19 @@ class ChargingPage(QWidget):
         """初始化信号连接"""
         self.backend.charging_updated.connect(self._on_charging_updated)
 
+    def _apply_latest_charging_data(self):
+        data = getattr(self.backend, "latest_charging_data", None) or self._last_charging_data
+        if data:
+            self._on_charging_updated(dict(data))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_latest_charging_data()
+
     @pyqtSlot(dict)
     def _on_charging_updated(self, data):
         """充电数据更新"""
+        self._last_charging_data = dict(data)
         # 电池盒状态
         if data.get('box_present'):
             self.box_status_label.setText("电池盒：在位")
@@ -224,20 +236,20 @@ class ChargingPage(QWidget):
             for i, present in enumerate(slots):
                 if present:
                     self.slot_labels[i]['status'].setText("在位")
-                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #5C635D; font-weight: bold;")
+                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #2E7D32; font-weight: bold;")
                     self.slot_labels[i]['frame'].setStyleSheet("""
                         QFrame {
-                            background-color: #E8F5E9;
+                            background-color: #DFF3E3;
                             border: none;
                             border-radius: 8px;
                         }
                     """)
                 else:
                     self.slot_labels[i]['status'].setText("空位")
-                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #5C635D;")
+                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #C4612F; font-weight: bold;")
                     self.slot_labels[i]['frame'].setStyleSheet("""
                         QFrame {
-                            background-color: #FBF9F5;
+                            background-color: #FADBD8;
                             border: none;
                             border-radius: 8px;
                         }

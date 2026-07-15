@@ -111,6 +111,29 @@ def polygon_bounds(polygon: Sequence[Sequence[float]]) -> BBox:
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+def bbox_area(bbox: BBox) -> float:
+    x1, y1, x2, y2 = [float(v) for v in bbox]
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
+
+
+def bbox_intersection_area(a: BBox, b: BBox) -> float:
+    ax1, ay1, ax2, ay2 = [float(v) for v in a]
+    bx1, by1, bx2, by2 = [float(v) for v in b]
+    left = max(ax1, bx1)
+    top = max(ay1, by1)
+    right = min(ax2, bx2)
+    bottom = min(ay2, by2)
+    return max(0.0, right - left) * max(0.0, bottom - top)
+
+
+def bbox_zone_coverage(bbox: BBox, zone: Dict[str, Any]) -> float:
+    zone_bbox = polygon_bounds(zone.get("polygon", []))
+    zone_area = bbox_area(zone_bbox)
+    if zone_area <= 0:
+        return 0.0
+    return bbox_intersection_area(bbox, zone_bbox) / zone_area
+
+
 def point_in_polygon(point: Point, polygon: Sequence[Sequence[float]]) -> bool:
     x, y = point
     inside = False
@@ -315,6 +338,23 @@ def analyze_inventory(detections: Sequence[Detection], zones_data: Dict[str, Any
                 all_normal = False
         else:
             detections_by_zone.setdefault(det.zone_id, []).append(det)
+
+    same_class_coverage_min = float(zones_data.get("same_class_zone_coverage_min", 0.45))
+    for zone in zones_data.get("zones", []):
+        zone_id = int(zone["zone_id"])
+        expected = [normalize_class_name(item) for item in zone.get("expected_classes", [])]
+        if any(
+            normalize_class_name(det.class_name) in expected
+            for det in detections_by_zone.get(zone_id, [])
+        ):
+            continue
+        for det in active_detections:
+            class_name = normalize_class_name(det.class_name)
+            if class_name not in expected:
+                continue
+            if bbox_zone_coverage(det.bbox, zone) >= same_class_coverage_min:
+                detections_by_zone.setdefault(zone_id, []).append(det)
+                break
 
     for zone in zones_data.get("zones", []):
         zone_id = int(zone["zone_id"])

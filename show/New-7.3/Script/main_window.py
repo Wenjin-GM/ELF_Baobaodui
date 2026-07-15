@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QFont
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from state_machine import StateMachine, PageType, SystemState
 from mock_backend import MockBackend
@@ -25,6 +26,9 @@ from pages.settings_page import SettingsPage
 from pages.debug_page import DebugPage
 from ui_theme import BOTTOM_NAV_HEIGHT, NAV_BUTTON_HEIGHT, TOP_BAR_HEIGHT, install_large_display_theme
 import os
+
+
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class MainWindow(QMainWindow):
@@ -143,7 +147,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.user_label)
 
         # 时间显示
-        self.time_label = QLabel(datetime.now().strftime("%H:%M"))
+        self.time_label = QLabel(self._beijing_time_text())
         self.time_label.setFixedWidth(110)
         self.time_label.setStyleSheet("color: #FFFFFF; font-size: 14px;")
         layout.addWidget(self.time_label)
@@ -417,7 +421,10 @@ class MainWindow(QMainWindow):
 
     def _update_time_display(self):
         """更新时间显示"""
-        self.time_label.setText(datetime.now().strftime("%H:%M"))
+        self.time_label.setText(self._beijing_time_text())
+
+    def _beijing_time_text(self) -> str:
+        return datetime.now(BEIJING_TZ).strftime("%H:%M")
 
     # ========== 触摸滑动支持 ==========
 

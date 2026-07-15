@@ -47,6 +47,8 @@ class CabinetLogicNode(Node):
         self.declare_parameter("record_runtime_data", True)
         self.declare_parameter("exclusive_i2c4_auth_mode", False)
         self.declare_parameter("nfc_server_wait_sec", 3.0)
+        self.declare_parameter("auto_inventory_after_auth", True)
+        self.declare_parameter("auto_inventory_after_auth_delay_sec", 1.0)
 
         self.state = "STANDBY"
         self.auth_in_progress = False
@@ -63,6 +65,7 @@ class CabinetLogicNode(Node):
         self.mock_battery_tick = 0
         self.mock_inventory_tick = 0
         self.inventory_in_progress = False
+        self.auto_inventory_after_auth_done = False
         ensure_data_dirs()
 
         ui_qos = QoSProfile(
@@ -326,6 +329,19 @@ class CabinetLogicNode(Node):
         self.set_state("ADMIN_AUTHED" if self.current_user["role"] == "admin" else "USER_AUTHED")
         self.add_event("认证", f"{self.current_user['name']} 通过 {self.current_user['method']} 认证", "info")
         self.open_lock_worker(reason)
+        self.maybe_schedule_auto_inventory_after_auth()
+
+    def maybe_schedule_auto_inventory_after_auth(self):
+        if self.auto_inventory_after_auth_done:
+            return
+        if self.inventory_in_progress:
+            return
+        if not bool(self.get_parameter("auto_inventory_after_auth").value):
+            return
+        self.auto_inventory_after_auth_done = True
+        delay = max(0.0, float(self.get_parameter("auto_inventory_after_auth_delay_sec").value))
+        self.add_event("inventory", "auto inventory after first auth scheduled", "info")
+        self.run_soon(self.inventory_worker, "auth_success_auto_inventory", delay_sec=delay)
 
     def open_lock_worker(self, reason: str):
         if self.call_open_lock():
@@ -535,17 +551,22 @@ class CabinetLogicNode(Node):
 
     def inventory_worker(self, reason: str):
         self.inventory_in_progress = True
+        background_inventory = reason == "auth_success_auto_inventory"
         try:
-            self.set_state("CHECKING_AFTER_CLOSE")
+            if not background_inventory:
+                self.set_state("CHECKING_AFTER_CLOSE")
             if not self.vision_client.wait_for_server(timeout_sec=0.5):
                 if bool(self.get_parameter("simulate_missing_vision").value):
                     self.add_event("inventory", "vision_node offline; using mock inventory result", "info")
                     self.apply_mock_inventory(reason)
-                    self.set_state(self._prev_auth_state())
+                    if not background_inventory:
+                        self.set_state(self._prev_auth_state())
                     self.publish_ui_summary()
                     return
                 self.add_event("盘点", "vision_node 未上线，无法盘点", "warning")
-                self.set_state("ALARM_ACTIVE")
+                if not background_inventory:
+                    self.set_state("ALARM_ACTIVE")
+                self.publish_ui_summary()
                 return
 
             goal = RunInventory.Goal()
@@ -555,14 +576,18 @@ class CabinetLogicNode(Node):
             goal_handle = self.wait_for_future(future, 2.0)
             if goal_handle is None or not goal_handle.accepted:
                 self.add_event("盘点", "视觉盘点请求被拒绝", "warning")
-                self.set_state("ALARM_ACTIVE")
+                if not background_inventory:
+                    self.set_state("ALARM_ACTIVE")
+                self.publish_ui_summary()
                 return
 
             result_future = goal_handle.get_result_async()
             result_msg = self.wait_for_future(result_future, 20.0)
             if result_msg is None:
                 self.add_event("盘点", "视觉盘点超时", "warning")
-                self.set_state("ALARM_ACTIVE")
+                if not background_inventory:
+                    self.set_state("ALARM_ACTIVE")
+                self.publish_ui_summary()
                 return
 
             result = result_msg.result
@@ -579,7 +604,8 @@ class CabinetLogicNode(Node):
             self.publish_ui_inventory()
             if result.success and result.is_normal:
                 self.add_event("盘点", "盘点正常", "info")
-                self.set_state(self._prev_auth_state())
+                if not background_inventory:
+                    self.set_state(self._prev_auth_state())
                 self.publish_ui_summary()
             else:
                 if self._inventory_has_misplaced(self.last_inventory):
@@ -588,7 +614,8 @@ class CabinetLogicNode(Node):
                     self.set_state("ALARM_ACTIVE")
                 else:
                     self.add_event("盘点", f"盘点借出: {result.message}", "info")
-                    self.set_state(self._prev_auth_state())
+                    if not background_inventory:
+                        self.set_state(self._prev_auth_state())
                     self.publish_ui_summary()
         finally:
             self.inventory_in_progress = False
@@ -687,6 +714,7 @@ class CabinetLogicNode(Node):
         response.accepted = True
         response.message = f"thresholds updated H_on={h_on} H_off={h_off} T_on={t_on} T_off={t_off}"
         self.add_event("设置", response.message, "info")
+        self.handle_env_control()
         self.publish_ui_environment()
         self.publish_ui_summary()
         return response

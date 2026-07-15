@@ -150,6 +150,26 @@ class RecordsPage(QWidget):
                 break
         self._refresh_table()
 
+    def clear_records(self):
+        """Clear records from the page and persisted event files."""
+        self.records.clear()
+
+        for candidate in (
+            Path.home() / "smart_tool_cabinet" / "data" / "events",
+            Path(__file__).resolve().parents[3] / "data" / "events",
+        ):
+            if not candidate.is_dir():
+                continue
+            for event_file in candidate.glob("*_event.json"):
+                try:
+                    d = json.loads(event_file.read_text(encoding="utf-8"))
+                    if d.get("type", "") in self._DISPLAY_TYPES:
+                        event_file.unlink()
+                except Exception:
+                    pass
+
+        self._refresh_table()
+
     def _init_connections(self):
         """初始化信号连接"""
         self.backend.event_added.connect(self._on_event_added)
@@ -202,13 +222,18 @@ class RecordsPage(QWidget):
             self.table.setItem(row, 2, content_item)
 
             # 级别
-            level_item = QTableWidgetItem(record['level'])
+            level = str(record.get('level', 'info'))
+            level_text = {
+                "info": "信息",
+                "warning": "警告",
+            }.get(level, level)
+            level_item = QTableWidgetItem(level_text)
             level_item.setTextAlignment(Qt.AlignCenter)
 
             # 根据级别设置颜色
-            if record['level'] == 'warning':
+            if level == 'warning':
                 level_item.setForeground(Qt.red)
-            elif record['level'] == 'info':
+            elif level == 'info':
                 level_item.setForeground(Qt.darkGreen)
 
             self.table.setItem(row, 3, level_item)
