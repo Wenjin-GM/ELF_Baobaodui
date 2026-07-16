@@ -63,6 +63,31 @@ start_node() {
   sleep 0.4
 }
 
+map_touchscreen_to_hdmi() {
+  if ! command -v xinput >/dev/null 2>&1 || ! command -v xrandr >/dev/null 2>&1; then
+    echo "touchscreen mapping skipped: xinput/xrandr unavailable"
+    return
+  fi
+  if ! xrandr --query | grep -q '^HDMI-1 connected'; then
+    echo "touchscreen mapping skipped: HDMI-1 not connected"
+    return
+  fi
+
+  local ids
+  ids="$(xinput list --id-only 'OpenWare Multi-Touch-V5000' 2>/dev/null || true)"
+  if [[ -z "$ids" ]]; then
+    echo "touchscreen mapping skipped: OpenWare Multi-Touch-V5000 not found"
+    return
+  fi
+
+  local id
+  while read -r id; do
+    [[ -z "$id" ]] && continue
+    xinput map-to-output "$id" HDMI-1 2>/dev/null || true
+  done <<< "$ids"
+  echo "touchscreen mapped to HDMI-1: $ids"
+}
+
 echo "stopping previous smart cabinet nodes..."
 "$PROJECT_ROOT/stop_all_ros_nodes.sh" >/dev/null 2>&1 || true
 
@@ -123,6 +148,8 @@ start_node cabinet_logic_node \
   -p simulate_missing_vision:="$SIMULATE_MISSING_VISION" \
   -p exclusive_i2c4_auth_mode:=false \
   -p nfc_server_wait_sec:=1.0
+
+map_touchscreen_to_hdmi
 
 case "$UI_MODE" in
   fullscreen)
