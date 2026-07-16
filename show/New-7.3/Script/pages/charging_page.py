@@ -7,10 +7,11 @@
 """
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QFrame, QPushButton, QGridLayout)
+                             QFrame, QPushButton, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 from ui_theme import ACTION_BUTTON_HEIGHT, CARD_MARGIN, CARD_SPACING, PAGE_MARGIN, PAGE_SPACING
+from pathlib import Path
 
 
 class ChargingPage(QWidget):
@@ -43,15 +44,13 @@ class ChargingPage(QWidget):
 
         # ========== 左侧：充电状态卡片 ==========
         status_card = self._create_status_card()
-        content_layout.addWidget(status_card, 2)
+        content_layout.addWidget(status_card, 1)
 
         # ========== 右侧：电池位表格 ==========
         slots_card = self._create_slots_card()
         content_layout.addWidget(slots_card, 1)
 
-        layout.addLayout(content_layout)
-
-        layout.addStretch()
+        layout.addLayout(content_layout, 1)
 
     def _create_status_card(self) -> QFrame:
         """创建充电状态卡片"""
@@ -70,40 +69,60 @@ class ChargingPage(QWidget):
 
         # 标题
         title = QLabel("1区电池盒状态")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1F2421;")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #1F2421;")
         layout.addWidget(title)
 
         # 电池盒在位状态
         self.box_status_label = QLabel("电池盒：检测中")
-        self.box_status_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #5C635D;")
+        self.box_status_label.setStyleSheet("font-size: 28px; font-weight: bold; color: #5C635D;")
         layout.addWidget(self.box_status_label)
 
         # 充电电源状态
         self.relay_status_label = QLabel("充电电源：关闭")
-        self.relay_status_label.setStyleSheet("font-size: 18px; color: #5C635D;")
+        self.relay_status_label.setStyleSheet("font-size: 24px; color: #5C635D;")
         layout.addWidget(self.relay_status_label)
 
         # 模块状态
         self.module_status_label = QLabel("充电检测模块：在线")
-        self.module_status_label.setStyleSheet("font-size: 14px; color: #5C635D;")
+        self.module_status_label.setStyleSheet("font-size: 20px; color: #5C635D;")
         layout.addWidget(self.module_status_label)
 
         # 充电策略
         strategy_layout = QHBoxLayout()
         strategy_label = QLabel("充电策略:")
-        strategy_label.setStyleSheet("font-size: 14px; color: #5C635D;")
+        strategy_label.setStyleSheet("font-size: 20px; color: #5C635D;")
         strategy_layout.addWidget(strategy_label)
 
         self.strategy_value_label = QLabel("自动")
-        self.strategy_value_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #C4612F;")
+        self.strategy_value_label.setStyleSheet("font-size: 22px; font-weight: bold; color: #C4612F;")
         strategy_layout.addWidget(self.strategy_value_label)
         strategy_layout.addStretch()
 
         layout.addLayout(strategy_layout)
 
+        image_label = self._create_image_label("charging_box.png", 660, 420)
+        if image_label:
+            layout.addWidget(image_label, alignment=Qt.AlignCenter)
+
         layout.addStretch()
 
         return card
+
+    def _asset_path(self, filename: str) -> Path:
+        return Path(__file__).resolve().parents[1] / "resources" / "ui_images" / filename
+
+    def _create_image_label(self, filename: str, width: int, height: int):
+        path = self._asset_path(filename)
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return None
+        label = QLabel()
+        label.setAlignment(Qt.AlignCenter)
+        label.setMinimumHeight(height)
+        label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        label.setPixmap(pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        label.setStyleSheet("background: transparent; border: none;")
+        return label
 
     def _create_slots_card(self) -> QFrame:
         """创建电池位卡片"""
@@ -128,11 +147,16 @@ class ChargingPage(QWidget):
         # 电池位网格
         self.slot_labels = []
         slots_layout = QGridLayout()
-        slots_layout.setSpacing(10)
+        slots_layout.setSpacing(14)
+        slots_layout.setRowStretch(0, 1)
+        slots_layout.setRowStretch(1, 1)
+        slots_layout.setColumnStretch(0, 1)
+        slots_layout.setColumnStretch(1, 1)
 
         for i in range(4):
             slot_frame = QFrame()
-            slot_frame.setMinimumSize(150, 116)
+            slot_frame.setMinimumSize(220, 170)
+            slot_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             slot_frame.setStyleSheet("""
                 QFrame {
                     background-color: #FBF9F5;
@@ -147,11 +171,11 @@ class ChargingPage(QWidget):
             slot_layout.setSpacing(8)
 
             slot_name = QLabel(f"位置 {i+1}")
-            slot_name.setStyleSheet("font-size: 14px; font-weight: bold; color: #1F2421;")
+            slot_name.setStyleSheet("font-size: 18px; font-weight: bold; color: #1F2421;")
             slot_layout.addWidget(slot_name, alignment=Qt.AlignCenter)
 
             slot_status = QLabel("--")
-            slot_status.setStyleSheet("font-size: 14px; color: #5C635D;")
+            slot_status.setStyleSheet("font-size: 20px; font-weight: bold; color: #5C635D;")
             slot_layout.addWidget(slot_status, alignment=Qt.AlignCenter)
 
             self.slot_labels.append({"frame": slot_frame, "status": slot_status})
@@ -159,9 +183,7 @@ class ChargingPage(QWidget):
             row, col = divmod(i, 2)
             slots_layout.addWidget(slot_frame, row, col)
 
-        layout.addLayout(slots_layout)
-
-        layout.addStretch()
+        layout.addLayout(slots_layout, 1)
 
         return card
 
@@ -205,27 +227,27 @@ class ChargingPage(QWidget):
         # 电池盒状态
         if data.get('box_present'):
             self.box_status_label.setText("电池盒：在位")
-            self.box_status_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #5C635D;")
+            self.box_status_label.setStyleSheet("font-size: 28px; font-weight: bold; color: #5C635D;")
         else:
             self.box_status_label.setText("电池盒：离位")
-            self.box_status_label.setStyleSheet("font-size: 20px; font-weight: bold; color: #C4612F;")
+            self.box_status_label.setStyleSheet("font-size: 28px; font-weight: bold; color: #C4612F;")
 
         # 充电电源状态
         if data.get('relay_on'):
             self.relay_status_label.setText("充电电源：开启")
-            self.relay_status_label.setStyleSheet("font-size: 18px; color: #5C635D; font-weight: bold;")
+            self.relay_status_label.setStyleSheet("font-size: 24px; color: #5C635D; font-weight: bold;")
         else:
             self.relay_status_label.setText("充电电源：关闭")
-            self.relay_status_label.setStyleSheet("font-size: 18px; color: #5C635D;")
+            self.relay_status_label.setStyleSheet("font-size: 24px; color: #5C635D;")
 
         # 模块状态
         module_ready = bool(data.get('module_online')) and bool(data.get('status_valid'))
         if module_ready:
             self.module_status_label.setText("充电检测模块：在线")
-            self.module_status_label.setStyleSheet("font-size: 14px; color: #5C635D;")
+            self.module_status_label.setStyleSheet("font-size: 20px; color: #5C635D;")
         else:
             self.module_status_label.setText("充电检测模块：离线")
-            self.module_status_label.setStyleSheet("font-size: 14px; color: #C4612F;")
+            self.module_status_label.setStyleSheet("font-size: 20px; color: #C4612F;")
 
         # 电池位状态
         slots = list(data.get('slots', []))[:4]
@@ -236,7 +258,7 @@ class ChargingPage(QWidget):
             for i, present in enumerate(slots):
                 if present:
                     self.slot_labels[i]['status'].setText("在位")
-                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #2E7D32; font-weight: bold;")
+                    self.slot_labels[i]['status'].setStyleSheet("font-size: 20px; color: #2E7D32; font-weight: bold;")
                     self.slot_labels[i]['frame'].setStyleSheet("""
                         QFrame {
                             background-color: #DFF3E3;
@@ -246,7 +268,7 @@ class ChargingPage(QWidget):
                     """)
                 else:
                     self.slot_labels[i]['status'].setText("空位")
-                    self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #C4612F; font-weight: bold;")
+                    self.slot_labels[i]['status'].setStyleSheet("font-size: 20px; color: #C4612F; font-weight: bold;")
                     self.slot_labels[i]['frame'].setStyleSheet("""
                         QFrame {
                             background-color: #FADBD8;
@@ -257,4 +279,4 @@ class ChargingPage(QWidget):
         else:
             for i in range(4):
                 self.slot_labels[i]['status'].setText("--")
-                self.slot_labels[i]['status'].setStyleSheet("font-size: 14px; color: #5C635D;")
+                self.slot_labels[i]['status'].setStyleSheet("font-size: 20px; font-weight: bold; color: #5C635D;")

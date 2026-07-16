@@ -89,26 +89,16 @@ class SettingsPage(QWidget):
         label.setStyleSheet("font-size: 17px; font-weight: bold; color: #1F2421;")
         settings_layout.addWidget(label, 0, 0)
 
-        self.temp_on_spin = QSpinBox()
-        self.temp_on_spin.setRange(0, 60)
-        self.temp_on_spin.setValue(35)
-        self.temp_on_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.temp_on_spin.setSuffix(" ℃")
-        self.temp_on_spin.setStyleSheet("font-size: 18px; padding: 6px 10px;")
-        settings_layout.addWidget(self.temp_on_spin, 0, 1)
+        self.temp_on_spin = self._create_threshold_spin(0, 60, 35, " ℃")
+        settings_layout.addLayout(self._create_threshold_control(self.temp_on_spin), 0, 1)
 
         # 风扇开启湿度  (humidity_on)
         label = QLabel("风扇开启湿度 (%RH):")
         label.setStyleSheet("font-size: 17px; font-weight: bold; color: #1F2421;")
         settings_layout.addWidget(label, 1, 0)
 
-        self.humidity_on_spin = QSpinBox()
-        self.humidity_on_spin.setRange(0, 100)
-        self.humidity_on_spin.setValue(55)
-        self.humidity_on_spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
-        self.humidity_on_spin.setSuffix(" %RH")
-        self.humidity_on_spin.setStyleSheet("font-size: 18px; padding: 6px 10px;")
-        settings_layout.addWidget(self.humidity_on_spin, 1, 1)
+        self.humidity_on_spin = self._create_threshold_spin(0, 100, 55, " %RH")
+        settings_layout.addLayout(self._create_threshold_control(self.humidity_on_spin), 1, 1)
 
         layout.addLayout(settings_layout)
 
@@ -120,6 +110,64 @@ class SettingsPage(QWidget):
         layout.addWidget(btn_save)
 
         return card
+
+    def _create_threshold_spin(self, minimum, maximum, value, suffix):
+        spin = QSpinBox()
+        spin.setRange(minimum, maximum)
+        spin.setValue(value)
+        spin.setSuffix(suffix)
+        spin.setButtonSymbols(QSpinBox.NoButtons)
+        spin.setAlignment(Qt.AlignCenter)
+        spin.setMinimumHeight(ACTION_BUTTON_HEIGHT)
+        spin.setMinimumWidth(180)
+        spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #FBF9F5;
+                border: none;
+                border-radius: 8px;
+                font-size: 18px;
+                font-weight: bold;
+                color: #1F2421;
+                padding: 6px 12px;
+            }
+        """)
+        return spin
+
+    def _create_threshold_control(self, spin):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(spin, 1)
+
+        btn_minus = QPushButton("-")
+        btn_plus = QPushButton("＋")
+        for btn, color, pressed in (
+            (btn_minus, "#D94B3D", "#B83D31"),
+            (btn_plus, "#2E9B55", "#247D44"),
+        ):
+            btn.setFixedSize(72, ACTION_BUTTON_HEIGHT)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 26px;
+                    color: #FFFFFF;
+                    font-weight: bold;
+                }}
+                QPushButton:pressed {{
+                    background-color: {pressed};
+                }}
+            """)
+
+        btn_minus.clicked.connect(lambda: self._adjust_threshold(spin, -1))
+        btn_plus.clicked.connect(lambda: self._adjust_threshold(spin, 1))
+        row.addWidget(btn_minus)
+        row.addWidget(btn_plus)
+        return row
+
+    def _adjust_threshold(self, spin, delta):
+        spin.setValue(spin.value() + delta)
 
     def _init_connections(self):
         self.threshold_update_timer = QTimer(self)

@@ -10,8 +10,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QPushButton, QGridLayout, QTableWidget,
                              QTableWidgetItem, QHeaderView)
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 from ui_theme import ACTION_BUTTON_HEIGHT, PAGE_MARGIN, PAGE_SPACING, TABLE_ROW_HEIGHT
+from pathlib import Path
 
 
 class ToolsPage(QWidget):
@@ -66,11 +67,11 @@ class ToolsPage(QWidget):
 
         # 五区工具表格
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["区域", "工具名称", "登记数量", "当前数量", "在借数量", "状态"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["区域", "工具名称", "工具示意图", "登记数量", "当前数量", "在借数量", "状态"])
         self.table.setRowCount(5)
-        self.table.verticalHeader().setDefaultSectionSize(TABLE_ROW_HEIGHT)
-        self.table.verticalHeader().setMinimumSectionSize(TABLE_ROW_HEIGHT)
+        self.table.verticalHeader().setDefaultSectionSize(104)
+        self.table.verticalHeader().setMinimumSectionSize(104)
         self.table.verticalHeader().setVisible(False)
 
         # 设置表格样式
@@ -80,7 +81,7 @@ class ToolsPage(QWidget):
                 border: none;
                 border-radius: 12px;
                 gridline-color: #E7E1D7;
-                font-size: 14px;
+                font-size: 15px;
             }
             QTableWidget::item {
                 padding: 10px;
@@ -96,9 +97,8 @@ class ToolsPage(QWidget):
 
         # 设置列宽
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        for col in [0, 2, 3, 4, 5]:
-            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        for col in range(self.table.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
 
         # 初始化表格数据
         self._init_table_data()
@@ -109,6 +109,28 @@ class ToolsPage(QWidget):
         self.status_label = QLabel("最近盘点: 等待中")
         self.status_label.setStyleSheet("font-size: 14px; color: #5C635D;")
         layout.addWidget(self.status_label)
+
+    _TOOL_IMAGE_FILES = {
+        1: "tool_battery_box.png",
+        2: "tool_pliers.png",
+        3: "tool_thermometer.png",
+        4: "tool_multimeter.png",
+        5: "tool_gloves.png",
+    }
+
+    def _asset_path(self, filename: str) -> Path:
+        return Path(__file__).resolve().parents[1] / "resources" / "ui_images" / filename
+
+    def _tool_image_widget(self, zone_id: int):
+        filename = self._TOOL_IMAGE_FILES.get(zone_id)
+        pixmap = QPixmap(str(self._asset_path(filename))) if filename else QPixmap()
+        label = QLabel()
+        label.setAlignment(Qt.AlignCenter)
+        label.setMinimumSize(190, 96)
+        label.setStyleSheet("background: transparent; padding: 2px;")
+        if not pixmap.isNull():
+            label.setPixmap(pixmap.scaled(184, 94, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        return label
 
     def _init_table_data(self):
         """初始化表格数据"""
@@ -122,14 +144,21 @@ class ToolsPage(QWidget):
 
         for row, (zone_id, zone_name, registered) in enumerate(zones_info):
             self.table.setItem(row, 0, QTableWidgetItem(zone_id))
-            self.table.setItem(row, 1, QTableWidgetItem(zone_name))
-            self.table.setItem(row, 2, QTableWidgetItem(str(registered)))
-            self.table.setItem(row, 3, QTableWidgetItem("--"))
+            name_item = QTableWidgetItem(zone_name)
+            name_font = name_item.font()
+            name_font.setPointSize(16)
+            name_font.setBold(True)
+            name_item.setFont(name_font)
+            self.table.setItem(row, 1, name_item)
+            self.table.setCellWidget(row, 2, self._tool_image_widget(row + 1))
+            self.table.setItem(row, 3, QTableWidgetItem(str(registered)))
             self.table.setItem(row, 4, QTableWidgetItem("--"))
-            self.table.setItem(row, 5, QTableWidgetItem("等待盘点"))
+            self.table.setItem(row, 5, QTableWidgetItem("--"))
+            self.table.setItem(row, 6, QTableWidgetItem("等待盘点"))
+            self.table.setRowHeight(row, 104)
 
             # 居中对齐
-            for col in range(6):
+            for col in [0, 1, 3, 4, 5, 6]:
                 item = self.table.item(row, col)
                 if item:
                     item.setTextAlignment(Qt.AlignCenter)
@@ -156,12 +185,17 @@ class ToolsPage(QWidget):
             if row < 0 or row >= self.table.rowCount():
                 continue
 
-            self.table.setItem(row, 3, QTableWidgetItem(str(zone.get('current', '--'))))
-            self.table.setItem(row, 4, QTableWidgetItem(str(zone.get('borrowed', '--'))))
-            self.table.setItem(row, 5, QTableWidgetItem(str(zone.get('status', '异常'))))
+            self.table.setItem(row, 4, QTableWidgetItem(str(zone.get('current', '--'))))
+            self.table.setItem(row, 5, QTableWidgetItem(str(zone.get('borrowed', '--'))))
+            status_new_item = QTableWidgetItem(str(zone.get('status', '异常')))
+            status_font = status_new_item.font()
+            status_font.setPointSize(17)
+            status_font.setBold(True)
+            status_new_item.setFont(status_font)
+            self.table.setItem(row, 6, status_new_item)
 
             # 根据状态设置颜色
-            status_item = self.table.item(row, 5)
+            status_item = self.table.item(row, 6)
             status_kind = self._status_kind(zone.get('status'))
             if status_kind == 'normal':
                 status_item.setForeground(Qt.darkGreen)
@@ -173,7 +207,7 @@ class ToolsPage(QWidget):
                 status_item.setForeground(Qt.red)
 
             # 居中对齐
-            for col in [3, 4, 5]:
+            for col in [4, 5, 6]:
                 item = self.table.item(row, col)
                 if item:
                     item.setTextAlignment(Qt.AlignCenter)

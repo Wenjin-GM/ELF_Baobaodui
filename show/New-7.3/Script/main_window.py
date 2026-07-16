@@ -10,8 +10,9 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QStackedWidget, QFrame,
                              QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from state_machine import StateMachine, PageType, SystemState
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         self.drag_start_pos = None
         self.is_dragging = False
         self._keep_tools_page_for_inventory = False
+        self._login_splash_active = False
 
         # 初始化UI
         self._init_ui()
@@ -231,6 +233,34 @@ class MainWindow(QMainWindow):
         self.pages[PageType.DEBUG] = debug
         self.stacked_widget.addWidget(debug)
 
+        self.login_success_page = self._create_login_success_page()
+        self.stacked_widget.addWidget(self.login_success_page)
+
+    def _ui_image_path(self, filename: str) -> Path:
+        return Path(__file__).resolve().parent / "resources" / "ui_images" / filename
+
+    def _create_login_success_page(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background-color: #000000;")
+
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addStretch(1)
+
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignCenter)
+        pixmap = QPixmap(str(self._ui_image_path("login_success.jpg")))
+        if pixmap.isNull():
+            image_label.setText("登录成功")
+            image_label.setStyleSheet("color: #FFFFFF; font-size: 34px; font-weight: bold;")
+        else:
+            image_label.setPixmap(pixmap.scaled(520, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        layout.addWidget(image_label, 0, Qt.AlignCenter)
+
+        layout.addStretch(1)
+        return page
+
     def _init_connections(self):
         """初始化信号连接"""
         # 状态机信号
@@ -396,11 +426,20 @@ class MainWindow(QMainWindow):
 
         if _v and _v != "0":
             print(f"[UI-DEBUG]   current_state={self.state_machine.current_state.value} → {new_state.value}")
-        if self.state_machine.current_state != new_state:
+        old_state = self.state_machine.current_state
+        auth_success_transition = (
+            old_state in (SystemState.STANDBY, SystemState.AUTH_PENDING)
+            and new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED)
+            and bool(self.state_machine.current_user)
+        )
+
+        if old_state != new_state:
             auto_page = not (
-                self.state_machine.current_state == SystemState.CHECKING_AFTER_CLOSE
+                old_state == SystemState.CHECKING_AFTER_CLOSE
                 and new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED)
             )
+            if auth_success_transition:
+                auto_page = False
             if (
                 self._keep_tools_page_for_inventory
                 and self.stacked_widget.currentWidget() == self.pages.get(PageType.TOOLS)
@@ -413,11 +452,39 @@ class MainWindow(QMainWindow):
             ):
                 auto_page = False
             self.state_machine.transition_to(new_state, auto_switch_page=auto_page)
+            if auth_success_transition:
+                self._show_login_success_splash()
         else:
             self._on_state_changed(new_state, new_state)
         self._update_navigation()
         if new_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED, SystemState.ALARM_ACTIVE, SystemState.STANDBY):
             self._keep_tools_page_for_inventory = False
+
+    def _show_login_success_splash(self):
+        """Show a short login-success splash before entering the dashboard."""
+        if self._login_splash_active:
+            return
+        self._login_splash_active = True
+        self.top_bar.hide()
+        self.bottom_nav.hide()
+        self.stacked_widget.setStyleSheet("background-color: #000000;")
+        self.stacked_widget.setCurrentWidget(self.login_success_page)
+        QTimer.singleShot(2000, self._finish_login_success_splash)
+
+    def _finish_login_success_splash(self):
+        if not self._login_splash_active:
+            return
+        self._login_splash_active = False
+        self.top_bar.show()
+        self.bottom_nav.show()
+        self.stacked_widget.setStyleSheet("background-color: #F7F4EF;")
+
+        if self.state_machine.current_state in (SystemState.USER_AUTHED, SystemState.ADMIN_AUTHED):
+            self._switch_to_page(PageType.DASHBOARD)
+        else:
+            default_page = self.state_machine.get_default_page()
+            if self.state_machine.is_page_allowed(default_page):
+                self._switch_to_page(default_page)
 
     def _update_time_display(self):
         """更新时间显示"""

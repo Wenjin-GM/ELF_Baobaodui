@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QLabel, QFrame, QPushButton, QScrollArea)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QFont
+import re
 from ui_theme import CARD_MARGIN, CARD_SPACING, PAGE_MARGIN, PAGE_SPACING
 
 
@@ -229,7 +230,35 @@ class DashboardPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setMaximumHeight(116)
-        scroll.setStyleSheet("border: none;")
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                background: #F1EDE6;
+                width: 34px;
+                margin: 0px;
+                border-radius: 12px;
+            }
+            QScrollBar::handle:vertical {
+                background: #C4612F;
+                min-height: 52px;
+                border-radius: 12px;
+            }
+            QScrollBar::handle:vertical:pressed {
+                background: #A94F25;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical,
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
+        """)
+        scroll.verticalScrollBar().setFixedWidth(34)
 
         scroll_content = QWidget()
         self.events_layout = QVBoxLayout(scroll_content)
@@ -252,6 +281,75 @@ class DashboardPage(QWidget):
         self.backend.tools_updated.connect(self._on_tools_updated)
         self.backend.charging_updated.connect(self._on_charging_updated)
         self.backend.event_added.connect(self._on_event_added)
+
+    _EVENT_TYPE_LABELS = {
+        "ui": "界面",
+        "inventory": "盘点",
+        "auth": "认证",
+        "system": "系统",
+        "status": "状态",
+        "environment": "环境",
+        "charging": "充电",
+        "warning": "告警",
+        "info": "信息",
+    }
+
+    _EVENT_REASON_LABELS = {
+        "ui_request": "界面触发",
+        "ui_node_test": "界面测试",
+        "door_closed": "关柜触发",
+        "auto_after_auth": "认证后自动触发",
+        "manual": "手动触发",
+    }
+
+    def _event_type_label(self, value):
+        text = str(value or "事件")
+        return self._EVENT_TYPE_LABELS.get(text, text)
+
+    def _event_content_label(self, value):
+        text = str(value or "")
+        if not text:
+            return text
+
+        text = re.sub(
+            r"request_inventory received:?\s*([^,]*)",
+            lambda m: "收到盘点请求" + (f"（{self._EVENT_REASON_LABELS.get(m.group(1).strip(), m.group(1).strip())}）" if m.group(1).strip() else ""),
+            text,
+        )
+        text = re.sub(
+            r"request_open received, timeout=([0-9.]+)s",
+            lambda m: f"收到开锁请求（超时 {m.group(1)} 秒）",
+            text,
+        )
+        text = re.sub(
+            r"request_manual_fan received: on \((.*?)\)",
+            lambda m: f"收到手动开启风扇请求（{self._EVENT_REASON_LABELS.get(m.group(1), m.group(1))}）",
+            text,
+        )
+        text = re.sub(
+            r"request_manual_fan received: off \((.*?)\)",
+            lambda m: f"收到手动关闭风扇请求（{self._EVENT_REASON_LABELS.get(m.group(1), m.group(1))}）",
+            text,
+        )
+
+        replacements = {
+            "auto inventory after first auth scheduled": "认证后自动盘点已触发",
+            "vision_node offline; using mock inventory result": "视觉节点离线，使用模拟盘点结果",
+            "fan control mode set to auto": "风扇已切换为自动控制",
+            "auth failed requested from UI": "界面触发认证失败",
+            "response: accepted=True": "响应：已接受",
+            "response: accepted=False": "响应：未接受",
+            "accepted=True": "已接受",
+            "accepted=False": "未接受",
+            "failed": "失败",
+            "message=": "消息=",
+            "request_inventory": "盘点请求",
+            "request_open": "开锁请求",
+            "request_manual_fan": "风扇控制请求",
+        }
+        for source, target in replacements.items():
+            text = text.replace(source, target)
+        return text
 
     def _status_kind(self, status):
         text = str(status or "")
@@ -325,7 +423,9 @@ class DashboardPage(QWidget):
                     widget.deleteLater()
 
         # 添加新事件
-        event_label = QLabel(f"[{event.get('type', '事件')}] {event.get('content', '')}")
+        event_type = self._event_type_label(event.get('type', '事件'))
+        event_content = self._event_content_label(event.get('content', ''))
+        event_label = QLabel(f"[{event_type}] {event_content}")
         event_label.setStyleSheet("font-size: 13px; color: #1F2421; padding: 4px;")
         event_label.setWordWrap(True)
 

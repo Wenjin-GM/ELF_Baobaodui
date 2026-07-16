@@ -7,11 +7,12 @@
 """
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-                             QFrame, QPushButton, QGridLayout)
+                             QFrame, QPushButton, QGridLayout, QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 from ui_theme import ACTION_BUTTON_HEIGHT, CARD_MARGIN, CARD_SPACING, PAGE_MARGIN, PAGE_SPACING
 
 
@@ -65,6 +66,9 @@ class EnvironmentPage(QWidget):
 
         layout.addStretch()
 
+    def _ui_image_path(self, filename: str) -> Path:
+        return Path(__file__).resolve().parents[1] / "resources" / "ui_images" / filename
+
     def _create_current_card(self) -> QFrame:
         """创建当前环境数据卡片"""
         card = QFrame()
@@ -85,6 +89,12 @@ class EnvironmentPage(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1F2421;")
         layout.addWidget(title)
 
+        body_layout = QHBoxLayout()
+        body_layout.setSpacing(18)
+
+        readings_layout = QVBoxLayout()
+        readings_layout.setSpacing(CARD_SPACING)
+
         # 温度显示
         temp_layout = QHBoxLayout()
         temp_icon = QLabel("🌡️")
@@ -96,7 +106,7 @@ class EnvironmentPage(QWidget):
         temp_layout.addWidget(self.temp_value_label)
         temp_layout.addStretch()
 
-        layout.addLayout(temp_layout)
+        readings_layout.addLayout(temp_layout)
 
         # 湿度显示
         humidity_layout = QHBoxLayout()
@@ -109,14 +119,31 @@ class EnvironmentPage(QWidget):
         humidity_layout.addWidget(self.humidity_value_label)
         humidity_layout.addStretch()
 
-        layout.addLayout(humidity_layout)
+        readings_layout.addLayout(humidity_layout)
 
         # 更新时间
         self.update_time_label = QLabel("更新时间: --")
         self.update_time_label.setStyleSheet("font-size: 13px; color: #5C635D;")
-        layout.addWidget(self.update_time_label)
+        readings_layout.addWidget(self.update_time_label)
+        readings_layout.addStretch()
 
-        layout.addStretch()
+        body_layout.addLayout(readings_layout, 3)
+
+        self.environment_image_label = QLabel()
+        self.environment_image_label.setAlignment(Qt.AlignCenter)
+        self.environment_image_label.setMinimumSize(220, 170)
+        self.environment_image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        env_pixmap = QPixmap(str(self._ui_image_path("environment_status.png")))
+        if env_pixmap.isNull():
+            self.environment_image_label.setText("环境示意图")
+            self.environment_image_label.setStyleSheet("font-size: 14px; color: #5C635D;")
+        else:
+            self.environment_image_label.setPixmap(
+                env_pixmap.scaled(260, 190, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        body_layout.addWidget(self.environment_image_label, 2)
+
+        layout.addLayout(body_layout, 1)
 
         return card
 

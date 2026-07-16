@@ -96,7 +96,30 @@ class RecordsPage(QWidget):
                 font-weight: bold;
                 font-size: 14px;
             }
+            QScrollBar:vertical {
+                background: #F1EDE6;
+                width: 34px;
+                margin: 0px;
+                border-radius: 12px;
+            }
+            QScrollBar::handle:vertical {
+                background: #C4612F;
+                min-height: 52px;
+                border-radius: 12px;
+            }
+            QScrollBar::handle:vertical:pressed {
+                background: #A94F25;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical,
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
         """)
+        self.table.verticalScrollBar().setFixedWidth(34)
 
         # 设置列宽
         header = self.table.horizontalHeader()

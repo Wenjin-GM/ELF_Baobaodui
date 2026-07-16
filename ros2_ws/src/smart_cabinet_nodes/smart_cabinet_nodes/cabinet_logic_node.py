@@ -640,7 +640,8 @@ class CabinetLogicNode(Node):
         self.beep_client.call_async(req)
 
     def request_manual_fan(self, request, response):
-        if self.state not in self.AUTHED_STATES:
+        alarm_with_user = self.state == "ALARM_ACTIVE" and bool(self.current_user)
+        if self.state not in self.AUTHED_STATES and not alarm_with_user:
             response.accepted = False
             response.message = f"manual fan requires authenticated state, current={self.state}"
             self.add_event("ui", response.message, "warning")
