@@ -124,6 +124,9 @@ class BatteryNode(Node):
     def _tick(self):
         with self._payload_lock:
             payload = dict(self._payload)
+        self._publish_payload(payload)
+
+    def _publish_payload(self, payload):
         self.pub.publish(String(data=json_text(payload)))
 
     def _read_loop(self):
@@ -138,6 +141,7 @@ class BatteryNode(Node):
             payload = self._apply_state(raw_payload)
             with self._payload_lock:
                 self._payload = payload
+            self._publish_payload(dict(payload))
             if payload.get("status_valid"):
                 state = "stale" if payload.get("stale") else "accepted"
                 self.get_logger().info(
