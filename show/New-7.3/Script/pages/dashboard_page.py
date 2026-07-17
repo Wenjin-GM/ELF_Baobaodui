@@ -10,6 +10,9 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QLabel, QFrame, QPushButton, QScrollArea)
 from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QFont
+import os
+import subprocess
+from pathlib import Path
 import re
 from ui_theme import CARD_MARGIN, CARD_SPACING, PAGE_MARGIN, PAGE_SPACING
 
@@ -30,6 +33,9 @@ class DashboardPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PAGE_MARGIN, 8, PAGE_MARGIN, PAGE_MARGIN)
         layout.setSpacing(8)
+
+        header_layout = self._create_header()
+        layout.addLayout(header_layout)
 
         # 主内容区域（使用网格布局）
         content_layout = QGridLayout()
@@ -55,6 +61,39 @@ class DashboardPage(QWidget):
         content_layout.setColumnStretch(1, 1)
 
         layout.addLayout(content_layout)
+
+
+    def _create_header(self) -> QHBoxLayout:
+        """创建总览页顶部操作栏"""
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+        header_layout.addStretch()
+
+        self.shutdown_button = QPushButton("⏻")
+        self.shutdown_button.setFixedSize(44, 36)
+        self.shutdown_button.setToolTip("退出系统")
+        self.shutdown_button.setStyleSheet("""
+            QPushButton {
+                background-color: #FBF9F5;
+                border: none;
+                border-radius: 8px;
+                color: #C4612F;
+                font-size: 22px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F2E3D6;
+            }
+            QPushButton:pressed {
+                background-color: #C4612F;
+                color: #FFFFFF;
+            }
+        """)
+        self.shutdown_button.clicked.connect(self._shutdown_system)
+        header_layout.addWidget(self.shutdown_button)
+
+        return header_layout
 
     def _create_tools_card(self) -> QFrame:
         """创建五区工具状态卡片"""
@@ -274,6 +313,24 @@ class DashboardPage(QWidget):
         layout.addWidget(scroll)
 
         return card
+
+
+    def _project_root(self) -> str:
+        env_root = os.environ.get("SMART_CABINET_PROJECT_ROOT")
+        if env_root:
+            return env_root
+        return str(Path(__file__).resolve().parents[4])
+
+    def _shutdown_system(self):
+        """Stop all cabinet nodes and return to the desktop."""
+        project_root = self._project_root()
+        script = os.path.join(project_root, "scripts", "stop_smart_cabinet_desktop.sh")
+        if not os.path.exists(script):
+            script = os.path.join(project_root, "stop_all_ros_nodes.sh")
+        try:
+            subprocess.Popen(["bash", script], start_new_session=True)
+        except Exception as exc:
+            print(f"[DashboardPage] failed to stop system: {exc}")
 
     def _init_connections(self):
         """初始化信号连接"""
