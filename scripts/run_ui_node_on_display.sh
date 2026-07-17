@@ -18,4 +18,6 @@ echo "XAUTHORITY=$XAUTHORITY"
 echo "QT_QPA_PLATFORM=$QT_QPA_PLATFORM"
 echo "ui_node defaults to fullscreen; pass --windowed for debugging."
 
+bash "$(dirname "$0")/map_touchscreen_to_hdmi.sh"
+
 exec ros2 run smart_cabinet_nodes ui_node "$@"

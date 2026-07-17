@@ -64,28 +64,7 @@ start_node() {
 }
 
 map_touchscreen_to_hdmi() {
-  if ! command -v xinput >/dev/null 2>&1 || ! command -v xrandr >/dev/null 2>&1; then
-    echo "touchscreen mapping skipped: xinput/xrandr unavailable"
-    return
-  fi
-  if ! xrandr --query | grep -q '^HDMI-1 connected'; then
-    echo "touchscreen mapping skipped: HDMI-1 not connected"
-    return
-  fi
-
-  local ids
-  ids="$(xinput list --id-only 'OpenWare Multi-Touch-V5000' 2>/dev/null || true)"
-  if [[ -z "$ids" ]]; then
-    echo "touchscreen mapping skipped: OpenWare Multi-Touch-V5000 not found"
-    return
-  fi
-
-  local id
-  while read -r id; do
-    [[ -z "$id" ]] && continue
-    xinput map-to-output "$id" HDMI-1 2>/dev/null || true
-  done <<< "$ids"
-  echo "touchscreen mapped to HDMI-1: $ids"
+  bash "$PROJECT_ROOT/scripts/map_touchscreen_to_hdmi.sh"
 }
 
 echo "stopping previous smart cabinet nodes..."
